@@ -1,0 +1,409 @@
+<!doctype html>
+<html>
+<head>
+  <title>{{ cfg.friendly_name }}</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+</head>
+
+<body style="margin:0;font-family:Segoe UI,Arial;background:#0f172a;color:#e5e7eb;">
+
+<div style="max-width:1450px;margin:0 auto;padding:40px;">
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:28px;">
+    <div>
+      <h1 style="margin:0;">{{ cfg.friendly_name }}</h1>
+      <p style="color:#94a3b8;margin-top:6px;">{{ cfg.channel_id }}</p>
+    </div>
+    <a style="color:#93c5fd;" href="/">← Back</a>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:24px;">
+
+    <div>
+
+      <div style="background:#111827;border:1px solid #263244;border-radius:18px;padding:22px;margin-bottom:24px;">
+        <h2 style="margin-top:0;">Live Preview</h2>
+
+        {% if primary_stream_url %}
+        <video id="preview" controls muted playsinline style="width:100%;background:#020617;border-radius:14px;"></video>
+        <div id="preview-status" style="color:#94a3b8;font-size:13px;margin-top:10px;">Loading preview...</div>
+
+        <div style="background:#020617;padding:12px;border-radius:10px;word-break:break-all;margin-top:14px;">
+          <div style="color:#94a3b8;font-size:12px;margin-bottom:6px;">Preview Source</div>
+          <a style="color:#93c5fd;" href="{{ primary_stream_url }}">{{ primary_stream_url }}</a>
+        </div>
+
+        <script>
+          const video = document.getElementById('preview');
+          const statusBox = document.getElementById('preview-status');
+          const streamUrl = "{{ primary_stream_url }}" + "?cacheBust=" + Date.now();
+
+          function setStatus(text, color = "#94a3b8") {
+            statusBox.textContent = text;
+            statusBox.style.color = color;
+          }
+
+          if (Hls.isSupported()) {
+            const hls = new Hls({ liveSyncDurationCount: 3, liveMaxLatencyDurationCount: 8 });
+            hls.loadSource(streamUrl);
+            hls.attachMedia(video);
+
+            hls.on(Hls.Events.MANIFEST_PARSED, function () {
+              setStatus("Preview loaded.", "#86efac");
+              video.play().catch(() => setStatus("Preview loaded. Click play.", "#fde68a"));
+            });
+
+            hls.on(Hls.Events.ERROR, function (event, data) {
+              if (data.fatal) {
+                setStatus("HLS error. Retrying...", "#fca5a5");
+                if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
+                else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
+              }
+            });
+          } else {
+            video.src = streamUrl;
+          }
+        </script>
+        {% endif %}
+      </div>
+
+      <div style="background:#111827;border:1px solid #263244;border-radius:18px;padding:22px;margin-bottom:24px;">
+        <h2 style="margin-top:0;">Now Playing</h2>
+        <div id="now-playing-box">
+          {% if current_item %}
+            <div style="font-size:18px;font-weight:600;">{{ current_item.title }}</div>
+            <div style="color:#94a3b8;font-size:13px;margin-top:6px;">{{ current_item.filename }}</div>
+            <div style="color:#94a3b8;font-size:13px;margin-top:6px;">
+              Position: {{ "%.1f"|format(current_item.elapsed_in_item) }} / {{ "%.1f"|format(current_item.duration_seconds) }} sec
+            </div>
+          {% else %}
+            <div style="color:#94a3b8;">Unknown</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div style="background:#111827;border:1px solid #263244;border-radius:18px;padding:22px;margin-bottom:24px;">
+        <h2 style="margin-top:0;">Upload Media</h2>
+        <form method="post" action="/channel/{{ channel }}/upload" enctype="multipart/form-data">
+          <input type="file" name="media" multiple
+                 style="background:#020617;color:#e5e7eb;border:1px solid #334155;border-radius:10px;padding:10px;width:100%;box-sizing:border-box;">
+          <button style="background:#2563eb;color:white;border:0;padding:10px 16px;border-radius:10px;cursor:pointer;margin-top:12px;">
+            Upload to Incoming
+          </button>
+        </form>
+
+        <h3>Normalization Status</h3>
+        <div style="color:#94a3b8;font-size:13px;">Incoming waiting: <span id="incoming-count">{{ ingest.incoming|length }}</span></div>
+        <div style="color:#94a3b8;font-size:13px;">Recently processed: <span id="processed-count">{{ ingest.processed|length }}</span></div>
+        <div style="color:#94a3b8;font-size:13px;">Failed: <span id="failed-count">{{ ingest.failed|length }}</span></div>
+
+        <pre id="ingest-log" style="background:#020617;color:#94a3b8;border-radius:10px;padding:12px;font-size:12px;max-height:220px;overflow:auto;white-space:pre-wrap;">{{ ingest.log_tail }}</pre>
+      </div>
+
+      <div style="background:#111827;border:1px solid #263244;border-radius:18px;padding:22px;">
+        <h2 style="margin-top:0;">Outputs</h2>
+
+        {% for o in outputs %}
+        <div style="border-top:1px solid #263244;padding-top:16px;margin-top:16px;">
+          <div style="display:inline-block;padding:5px 10px;border-radius:999px;background:#1e3a8a;color:#bfdbfe;font-size:13px;">{{ o.type }}</div>
+          <h3>{{ o.friendly_name }}</h3>
+
+          <p>
+            Status:
+            <span id="status-{{ o.output_id }}" style="color:{% if o.status.status == 'running' %}#86efac{% else %}#fca5a5{% endif %};">
+              ● {{ o.status.status }}
+            </span>
+          </p>
+
+          <p style="color:#94a3b8;">PID: <span id="pid-{{ o.output_id }}">{{ o.status.pid or "" }}</span></p>
+          <p style="color:#94a3b8;">Started: <span id="started-{{ o.output_id }}">{{ o.status.started_at or "" }}</span></p>
+
+          <form method="post" action="/channel/{{ channel }}/output/{{ o.output_id }}/start" style="display:inline">
+            <button style="background:#2563eb;color:white;border:0;padding:9px 14px;border-radius:10px;cursor:pointer;">Start</button>
+          </form>
+
+          <form method="post" action="/channel/{{ channel }}/output/{{ o.output_id }}/stop" style="display:inline">
+            <button style="background:#dc2626;color:white;border:0;padding:9px 14px;border-radius:10px;cursor:pointer;">Stop</button>
+          </form>
+
+          {% if o.hls %}
+          <div style="background:#020617;padding:12px;border-radius:10px;word-break:break-all;margin-top:14px;">
+            <a style="color:#93c5fd;" href="{{ o.hls.actual_public_url }}">{{ o.hls.actual_public_url }}</a>
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+
+    </div>
+
+    <div style="background:#111827;border:1px solid #263244;border-radius:18px;padding:22px;">
+      <h2 style="margin-top:0;">Playlist Editor</h2>
+      <p style="color:#94a3b8;">Enable/disable, rename, reorder, and select future audio/video sources. Click Apply Playlist Changes to update live playout.</p>
+
+      <form id="playlist-form" method="post" action="/channel/{{ channel }}/playlist/save">
+        <div id="playlist">
+          {% for item in playlist %}
+          <div class="playlist-item" draggable="true" style="background:#020617;border:1px solid #1e293b;border-radius:12px;padding:12px 14px;margin-bottom:10px;cursor:grab;">
+            <input type="hidden" name="file" value="{{ item.full_path }}">
+            <input type="hidden" name="duration_seconds" value="{{ item.duration_seconds or 0 }}">
+            <input type="hidden" name="enabled_value" value="{% if item.enabled %}true{% else %}false{% endif %}">
+
+            <div style="display:flex;gap:12px;align-items:center;">
+              <span style="color:#94a3b8;font-size:22px;">☰</span>
+
+              <input
+                type="checkbox"
+                class="enabled-toggle"
+                {% if item.enabled %}checked{% endif %}
+                style="width:32px;height:32px;cursor:pointer;accent-color:#2563eb;flex-shrink:0;"
+              >
+
+              <input name="title" value="{{ item.title }}"
+                     style="flex:1;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:8px;padding:10px;font-size:15px;">
+            </div>
+
+            <div style="color:#e5e7eb;font-size:13px;margin-top:8px;">{{ item.filename }}</div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
+              <div>
+                <div style="color:#94a3b8;font-size:12px;margin-bottom:4px;">Video Source</div>
+                <select name="video_source_id" style="width:100%;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:8px;padding:8px;">
+                  {% for source in video_sources %}
+                  <option value="{{ source.id }}" {% if item.video_source_id == source.id %}selected{% endif %}>{{ source.friendly_name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <div>
+                <div style="color:#94a3b8;font-size:12px;margin-bottom:4px;">Audio Source</div>
+                <select name="audio_source_id" style="width:100%;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:8px;padding:8px;">
+                  {% for source in audio_sources %}
+                  <option value="{{ source.id }}" {% if item.audio_source_id == source.id %}selected{% endif %}>{{ source.friendly_name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+
+            <div style="color:#64748b;font-size:12px;margin-top:8px;">Duration: {{ "%.1f"|format(item.duration_seconds or 0) }} sec</div>
+            <div style="color:#64748b;font-size:12px;word-break:break-all;margin-top:4px;">{{ item.full_path }}</div>
+
+            <button
+              type="submit"
+              form="delete-{{ loop.index }}"
+              style="background:#7f1d1d;color:white;border:0;padding:8px 12px;border-radius:8px;cursor:pointer;margin-top:10px;">
+              Delete Content
+            </button>
+          </div>
+          {% endfor %}
+        </div>
+
+        <button style="background:#2563eb;color:white;border:0;padding:12px 18px;border-radius:10px;cursor:pointer;margin-top:12px;font-size:15px;">
+          Apply Playlist Changes
+        </button>
+      </form>
+
+      {% for item in playlist %}
+      <form id="delete-{{ loop.index }}" method="post" action="/channel/{{ channel }}/content/delete"
+            onsubmit="return confirm('Delete this content file and remove it from the playlist?');">
+        <input type="hidden" name="file" value="{{ item.full_path }}">
+      </form>
+      {% endfor %}
+
+      <form method="post" action="/channel/{{ channel }}/flush"
+            onsubmit="return confirm('This will delete all media, playlists, logs, runtime state, and HLS files for this channel. Config files remain. Continue?');"
+            style="margin-top:12px;">
+        <button style="background:#991b1b;color:white;border:0;padding:10px 16px;border-radius:10px;cursor:pointer;">
+          Flush Channel Media + Runtime
+        </button>
+      </form>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const playlist = document.getElementById('playlist');
+let dragged = null;
+
+playlist.addEventListener('dragstart', (e) => {
+  dragged = e.target.closest('.playlist-item');
+});
+
+playlist.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  const target = e.target.closest('.playlist-item');
+  if (!target || target === dragged) return;
+
+  const rect = target.getBoundingClientRect();
+  const next = (e.clientY - rect.top) / rect.height > 0.5;
+  playlist.insertBefore(dragged, next ? target.nextSibling : target);
+});
+
+document.querySelectorAll('.enabled-toggle').forEach((box) => {
+  const item = box.closest('.playlist-item');
+  const hidden = item.querySelector('input[name="enabled_value"]');
+
+  function syncEnabled() {
+    hidden.value = box.checked ? 'true' : 'false';
+  }
+
+  box.addEventListener('change', syncEnabled);
+  syncEnabled();
+});
+
+const initialPlaylistCount = {{ playlist|length }};
+
+async function refreshStatus() {
+  try {
+    const res = await fetch('/api/channel/{{ channel }}/status?ts=' + Date.now());
+    const data = await res.json();
+
+    for (const output of data.outputs) {
+      const s = output.status || {};
+      const statusEl = document.getElementById('status-' + output.output_id);
+      const pidEl = document.getElementById('pid-' + output.output_id);
+      const startedEl = document.getElementById('started-' + output.output_id);
+
+      if (statusEl) {
+        statusEl.textContent = '● ' + (s.status || 'unknown');
+        statusEl.style.color = s.status === 'running' ? '#86efac' : '#fca5a5';
+      }
+
+      if (pidEl) pidEl.textContent = s.pid || '';
+      if (startedEl) startedEl.textContent = s.started_at || '';
+    }
+
+    const box = document.getElementById('now-playing-box');
+
+    if (box && data.current_item) {
+      box.innerHTML = `
+        <div style="font-size:18px;font-weight:600;">${data.current_item.title}</div>
+        <div style="color:#94a3b8;font-size:13px;margin-top:6px;">${data.current_item.filename}</div>
+        <div style="color:#94a3b8;font-size:13px;margin-top:6px;">
+          Position: ${data.current_item.elapsed_in_item.toFixed(1)} / ${data.current_item.duration_seconds.toFixed(1)} sec
+        </div>
+      `;
+    }
+
+    if (typeof data.playlist_count !== 'undefined' && data.playlist_count !== initialPlaylistCount) {
+      window.location.reload();
+      return;
+    }
+
+    if (data.ingest) {
+      document.getElementById('incoming-count').textContent = data.ingest.incoming.length;
+      document.getElementById('processed-count').textContent = data.ingest.processed.length;
+      document.getElementById('failed-count').textContent = data.ingest.failed.length;
+      document.getElementById('ingest-log').textContent = data.ingest.log_tail || '';
+    }
+
+  } catch (e) {
+    console.log(e);
+  }
+}
+
+setInterval(refreshStatus, 5000);
+</script>
+
+</body>
+</html>
+
+<hr style="margin:40px 0;border-color:#334155;">
+
+<div style="background:#111827;border:1px solid #263244;border-radius:18px;padding:22px;margin-bottom:24px;">
+  <h2 style="margin-top:0;">External Audio Sources</h2>
+
+  <p style="color:#94a3b8;">
+    Add radio station streams, HLS audio, or multicast audio sources here.
+  </p>
+
+  <form method="post" action="/channel/{{ channel }}/audio-source/add">
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+
+      <input
+        name="source_id"
+        placeholder="source id example: rock-radio"
+        style="background:#020617;color:#e5e7eb;border:1px solid #334155;border-radius:8px;padding:10px;"
+      >
+
+      <input
+        name="friendly_name"
+        placeholder="friendly name example: Rock Radio"
+        style="background:#020617;color:#e5e7eb;border:1px solid #334155;border-radius:8px;padding:10px;"
+      >
+
+    </div>
+
+    <div style="display:grid;grid-template-columns:180px 1fr;gap:10px;">
+
+      <select
+        name="source_type"
+        style="background:#020617;color:#e5e7eb;border:1px solid #334155;border-radius:8px;padding:10px;"
+      >
+        <option value="web">Web Stream</option>
+        <option value="hls">HLS Audio</option>
+        <option value="udp">UDP / Multicast</option>
+      </select>
+
+      <input
+        name="url"
+        placeholder="http://radio.example.com/live"
+        style="background:#020617;color:#e5e7eb;border:1px solid #334155;border-radius:8px;padding:10px;"
+      >
+
+    </div>
+
+    <button
+      style="margin-top:12px;background:#2563eb;color:white;border:0;padding:10px 16px;border-radius:10px;cursor:pointer;"
+    >
+      Add / Update Audio Source
+    </button>
+
+  </form>
+
+  <div style="margin-top:18px;">
+
+    {% for source in audio_sources %}
+
+    <div style="background:#020617;border:1px solid #1e293b;border-radius:10px;padding:10px;margin-bottom:8px;">
+
+      <div style="font-weight:600;">
+        {{ source.friendly_name }}
+      </div>
+
+      <div style="color:#94a3b8;font-size:12px;word-break:break-all;">
+        ID: {{ source.id }} |
+        TYPE: {{ source.type }} |
+        URL: {{ source.url }}
+      </div>
+
+      {% if source.id != "embedded" and source.id != "silent" %}
+
+      <form
+        method="post"
+        action="/channel/{{ channel }}/audio-source/delete"
+        style="margin-top:8px;"
+        onsubmit="return confirm('Delete this audio source?');"
+      >
+
+        <input type="hidden" name="source_id" value="{{ source.id }}">
+
+        <button
+          style="background:#7f1d1d;color:white;border:0;padding:7px 11px;border-radius:8px;cursor:pointer;"
+        >
+          Delete Audio Source
+        </button>
+
+      </form>
+
+      {% endif %}
+
+    </div>
+
+    {% endfor %}
+
+  </div>
+
+</div>

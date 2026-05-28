@@ -1,0 +1,20 @@
+<!doctype html>
+<html>
+<head>
+  <title>Custom Streaming Engine</title>
+</head>
+<body style="margin:0;font-family:Segoe UI,Arial;background:#0f172a;color:#e5e7eb;">
+  <div style="max-width:1100px;margin:0 auto;padding:40px;">
+    <h1>Custom Streaming Engine</h1>
+    <p style="color:#94a3b8;">Channels, outputs, playlists, and HLS playout control.</p>
+
+    {% for c in channels %}
+    <div style="background:#111827;border:1px solid #263244;border-radius:18px;padding:22px;margin-top:20px;">
+      <div style="display:inline-block;padding:5px 10px;border-radius:999px;background:#064e3b;color:#a7f3d0;font-size:13px;">Channel</div>
+      <h2><a style="color:#93c5fd;text-decoration:none;" href="/channel/{{ c.name }}">{{ c.config.friendly_name }}</a></h2>
+      <div style="color:#94a3b8;">{{ c.config.channel_id }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</body>
+</html>
