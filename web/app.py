@@ -1,3 +1,84 @@
+
+# BOOTSTRAP DEFAULT CHANNEL - v0.1.1
+def bootstrap_default_channel():
+    import os
+    import json
+
+    root = "/channels"
+    channel_id = "Channel1"
+    cdir = os.path.join(root, channel_id)
+
+    folders = [
+        "incoming",
+        "production",
+        "processed",
+        "failed",
+        "playlists",
+        "outputs",
+        "runtime/logs",
+        "runtime/pids",
+        "runtime/status",
+        "runtime/cache"
+    ]
+
+    for folder in folders:
+        os.makedirs(os.path.join(cdir, folder), exist_ok=True)
+
+    channel_json = os.path.join(cdir, "channel.json")
+    if not os.path.exists(channel_json):
+        with open(channel_json, "w") as f:
+            json.dump({
+                "channel_id": channel_id,
+                "name": "Channel 1",
+                "files": {
+                    "human_playlist": "playlists/human_playlist.json",
+                    "ffmpeg_playlist": "playlists/ffmpeg_playlist.txt"
+                },
+                "audio_sources": [
+                    {
+                        "id": "embedded",
+                        "friendly_name": "Embedded File Audio",
+                        "type": "embedded",
+                        "url": ""
+                    },
+                    {
+                        "id": "silent",
+                        "friendly_name": "Silent / No Audio",
+                        "type": "silent",
+                        "url": ""
+                    }
+                ]
+            }, f, indent=2)
+
+    human_playlist = os.path.join(cdir, "playlists/human_playlist.json")
+    if not os.path.exists(human_playlist):
+        with open(human_playlist, "w") as f:
+            json.dump([], f, indent=2)
+
+    ffmpeg_playlist = os.path.join(cdir, "playlists/ffmpeg_playlist.txt")
+    if not os.path.exists(ffmpeg_playlist):
+        Path(ffmpeg_playlist).write_text("")
+
+    output_json = os.path.join(cdir, "outputs/hls-main.json")
+    if not os.path.exists(output_json):
+        with open(output_json, "w") as f:
+            json.dump({
+                "output_id": "hls-main",
+                "name": "Main HLS Output",
+                "type": "hls",
+                "enabled": True,
+                "autostart": False,
+                "hls": {
+                    "output_dir": "/var/www/html/hls/channel1",
+                    "output_file": "stream.m3u8",
+                    "hls_time": 4,
+                    "hls_list_size": 12
+                }
+            }, f, indent=2)
+
+bootstrap_default_channel()
+
+
 from flask import Flask, render_template, redirect, request, jsonify
 from werkzeug.utils import secure_filename
 import json
