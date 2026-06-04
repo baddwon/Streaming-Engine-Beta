@@ -360,6 +360,14 @@ def upload_file(channel):
 
         file.save(dest)
 
+        # Direct ingest trigger. This makes uploads work even when the
+        # background watcher was not running because the channel was created
+        # after container startup.
+        subprocess.Popen([
+            "/opt/custom-streaming/scripts/prestage.sh",
+            cdir,
+            dest
+        ])
     return redirect(f"/channel/{channel}")
 
 
