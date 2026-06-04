@@ -139,9 +139,7 @@ video_feed_loop() {
       -f concat -safe 0 -i "$CONCAT_FILE" \
       -map 0:v:0 \
       -an \
-      -vaapi_device /dev/dri/renderD128 \
-      -vf format=nv12,hwupload \
-      -c:v h264_vaapi \
+      -c:v libx264 -preset veryfast \
       -g "$GOP" \
       -r "$FPS" \
       -b:v 4000k \
@@ -263,3 +261,4 @@ audio_feed_loop &
 echo "$!" > "$PID_DIR/${OUTPUT_ID}.audio-feed.pid"
 
 wait
+

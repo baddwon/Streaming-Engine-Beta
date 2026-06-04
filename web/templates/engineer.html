@@ -1,0 +1,92 @@
+<!doctype html>
+<html>
+<head>
+  <title>Engineer / Global Settings</title>
+  <style>
+    * { box-sizing:border-box; }
+    body { margin:0;font-family:Segoe UI,Arial,sans-serif;background:#0f172a;color:#e5e7eb; }
+    a { color:#93c5fd; }
+    .page { max-width:1300px;margin:0 auto;padding:36px 28px; }
+    .card { background:#111827;border:1px solid #334155;border-radius:18px;padding:24px;margin-bottom:24px; }
+    .subtle { color:#94a3b8; }
+    input, select { background:#020617;color:#e5e7eb;border:1px solid #334155;border-radius:8px;padding:9px;width:100%; }
+    .button { border:0;border-radius:10px;padding:10px 14px;background:#2563eb;color:white;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block; }
+    .button-danger { background:#991b1b; }
+    .grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px; }
+    .box { background:#020617;border:1px solid #1e293b;border-radius:12px;padding:14px;margin-top:12px; }
+  </style>
+</head>
+
+<body>
+<div class="page">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
+    <div>
+      <h1 style="margin:0;">Engineer / Global Settings</h1>
+      <div class="subtle">Hardware, encoder, outputs, and audio source configuration.</div>
+    </div>
+    <a href="/">Back to channels</a>
+  </div>
+
+  <div class="card">
+    <h2>System Detection</h2>
+    <div><strong>Video encoder:</strong> {{ system_status.video_encoder or "unknown" }}</div>
+    <div><strong>Reason:</strong> {{ system_status.reason or "unknown" }}</div>
+    <div><strong>NVIDIA:</strong> {{ system_status.nvidia or "unknown" }}</div>
+    <div><strong>VAAPI Intel/AMD:</strong> {{ system_status.vaapi or "unknown" }}</div>
+    <div><strong>Audio device state:</strong> {{ system_status.audio_devices or "unknown" }}</div>
+  </div>
+
+  {% for ch in channels %}
+  <div class="card">
+    <h2>{{ ch.name }} <span class="subtle">({{ ch.id }})</span></h2>
+
+    <h3>Outputs</h3>
+    {% for o in ch.outputs %}
+    <div class="box">
+      <div><strong>{{ o.name or o.output_id }}</strong></div>
+      <div class="subtle">Type: {{ o.type }} | Output ID: {{ o.output_id }}</div>
+      {% if o.hls %}
+      <div class="subtle">HLS dir: {{ o.hls.output_dir }}</div>
+      <div class="subtle">File: {{ o.hls.output_file }}</div>
+      <div class="subtle">List size: {{ o.hls.hls_list_size }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+
+    <h3 style="margin-top:22px;">Audio Sources</h3>
+
+    <form method="post" action="/channel/{{ ch.id }}/audio-source/add">
+      <div class="grid">
+        <input name="source_id" placeholder="source id example: kxxr">
+        <input name="friendly_name" placeholder="friendly name example: 93X">
+        <select name="source_type">
+          <option value="web">Web stream</option>
+          <option value="hls">HLS audio</option>
+          <option value="udp">UDP / Multicast</option>
+        </select>
+        <input name="url" placeholder="http://radio.example.com/live">
+      </div>
+
+      <button class="button" style="margin-top:12px;">Add / Update Audio Source</button>
+    </form>
+
+    {% for source in ch.audio_sources %}
+    <div class="box">
+      <div><strong>{{ source.friendly_name }}</strong></div>
+      <div class="subtle" style="word-break:break-all;">ID: {{ source.id }} | Type: {{ source.type }} | URL: {{ source.url }}</div>
+
+      {% if source.id not in ["embedded", "silent"] %}
+      <form method="post" action="/channel/{{ ch.id }}/audio-source/delete"
+            style="margin-top:8px;"
+            onsubmit="return confirm('Delete this audio source?');">
+        <input type="hidden" name="source_id" value="{{ source.id }}">
+        <button class="button button-danger">Delete audio source</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+</body>
+</html>

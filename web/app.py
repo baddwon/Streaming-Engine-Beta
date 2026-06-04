@@ -1,85 +1,9 @@
+# BOOTSTRAP CHANNEL ROOT - simple-portable
+from pathlib import Path
+import os
 
-# BOOTSTRAP DEFAULT CHANNEL - v0.1.1
-def bootstrap_default_channel():
-    import os
-    import json
-    from pathlib import Path
-
-    root = "/channels"
-    channel_id = "Channel1"
-    cdir = os.path.join(root, channel_id)
-
-    folders = [
-        "incoming",
-        "production",
-        "processed",
-        "failed",
-        "playlists",
-        "outputs",
-        "runtime/logs",
-        "runtime/pids",
-        "runtime/status",
-        "runtime/cache"
-    ]
-
-    for folder in folders:
-        os.makedirs(os.path.join(cdir, folder), exist_ok=True)
-
-    channel_json = os.path.join(cdir, "channel.json")
-    if not os.path.exists(channel_json):
-        with open(channel_json, "w") as f:
-            json.dump({
-                "channel_id": channel_id,
-                "name": "Channel 1",
-                "files": {
-                    "human_playlist": "playlists/human_playlist.json",
-                    "ffmpeg_playlist": "playlists/ffmpeg_playlist.txt"
-                },
-                "audio_sources": [
-                    {
-                        "id": "embedded",
-                        "friendly_name": "Embedded File Audio",
-                        "type": "embedded",
-                        "url": ""
-                    },
-                    {
-                        "id": "silent",
-                        "friendly_name": "Silent / No Audio",
-                        "type": "silent",
-                        "url": ""
-                    }
-                ]
-            }, f, indent=2)
-
-    human_playlist = os.path.join(cdir, "playlists/human_playlist.json")
-    if not os.path.exists(human_playlist):
-        with open(human_playlist, "w") as f:
-            json.dump([], f, indent=2)
-
-    ffmpeg_playlist = os.path.join(cdir, "playlists/ffmpeg_playlist.txt")
-    if not os.path.exists(ffmpeg_playlist):
-        Path(ffmpeg_playlist).write_text("")
-
-    output_json = os.path.join(cdir, "outputs/hls-main.json")
-    if not os.path.exists(output_json):
-        with open(output_json, "w") as f:
-            json.dump({
-                "output_id": "hls-main",
-                "name": "Main HLS Output",
-                "type": "hls",
-                "enabled": True,
-                "autostart": False,
-                "hls": {
-                    "output_dir": "/var/www/html/hls/channel1",
-                    "output_file": "stream.m3u8",
-                    "hls_time": 4,
-                    "hls_list_size": 12
-                }
-            }, f, indent=2)
-
-bootstrap_default_channel()
-
-
+CHANNEL_ROOT = Path(os.getenv("CHANNEL_ROOT", "/channels"))
+CHANNEL_ROOT.mkdir(parents=True, exist_ok=True)
 from flask import Flask, render_template, redirect, request, jsonify
 from werkzeug.utils import secure_filename
 import json
@@ -334,7 +258,7 @@ def api_channel_status(channel):
 
     return jsonify({
         "channel": channel,
-        "friendly_name": cfg.get("friendly_name"),
+        "friendly_name": cfg.get("name", channel),
         "playlist_count": len(playlist),
         "playlist_files": [item.get("filename") for item in playlist],
         "primary_stream_url": primary_stream_url,
@@ -350,15 +274,19 @@ def add_audio_source(channel):
     cfg_path = os.path.join(cdir, "channel.json")
     cfg = load_json(cfg_path, {})
 
-    source_id = request.form.get("source_id", "").strip().lower().replace(" ", "-")
+    source_id = request.form.get("source_id", "").strip()
     friendly_name = request.form.get("friendly_name", "").strip()
     source_type = request.form.get("source_type", "web").strip()
     url = request.form.get("url", "").strip()
 
-    if not source_id or not friendly_name:
-        response = redirect(f"/channel/{channel}")
-    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    return response
+    import re
+    source_id = re.sub(r"[^A-Za-z0-9_-]", "", source_id.replace(" ", "_"))
+
+    if not source_id:
+        return redirect(f"/channel/{channel}")
+
+    if not friendly_name:
+        friendly_name = source_id
 
     cfg.setdefault("audio_sources", [])
     cfg["audio_sources"] = [s for s in cfg["audio_sources"] if s.get("id") != source_id]
@@ -371,8 +299,8 @@ def add_audio_source(channel):
     })
 
     save_json(cfg_path, cfg)
-    return redirect(f"/channel/{channel}")
 
+    return redirect(f"/channel/{channel}")
 
 @app.route("/channel/<channel>/audio-source/delete", methods=["POST"])
 def delete_audio_source(channel):
@@ -574,5 +502,202 @@ def flush_channel(channel):
     return redirect(f"/channel/{channel}")
 
 
+
+@app.route("/channel/add", methods=["POST"])
+def add_channel():
+    import re
+    import json
+    from pathlib import Path
+
+    channel_id = request.form.get("channel_id", "").strip()
+    friendly_name = request.form.get("friendly_name", "").strip()
+    hls_name = ""
+    output_file = request.form.get("output_file", "stream.m3u8").strip()
+
+    channel_id = re.sub(r"[^A-Za-z0-9_-]", "", channel_id.replace(" ", "_"))
+    if not channel_id:
+        channel_id = "Channel1"
+
+    if not friendly_name:
+        friendly_name = channel_id
+
+    hls_name = "Ch_" + channel_id
+
+    if not output_file.endswith(".m3u8"):
+        output_file = "stream.m3u8"
+
+    cdir = Path("/channels") / channel_id
+
+    folders = [
+        "incoming",
+        "production",
+        "processed",
+        "failed",
+        "playlists",
+        "outputs",
+        "runtime/logs",
+        "runtime/pids",
+        "runtime/status",
+        "runtime/cache",
+    ]
+
+    for folder in folders:
+        (cdir / folder).mkdir(parents=True, exist_ok=True)
+
+    channel_json = cdir / "channel.json"
+    if not channel_json.exists():
+        channel_json.write_text(json.dumps({
+            "channel_id": channel_id,
+            "name": friendly_name,
+            "files": {
+                "human_playlist": "playlists/human_playlist.json",
+                "ffmpeg_playlist": "playlists/ffmpeg_playlist.txt"
+            },
+            "audio_sources": [
+                {
+                    "id": "embedded",
+                    "friendly_name": "Embedded File Audio",
+                    "type": "embedded",
+                    "url": ""
+                },
+                {
+                    "id": "silent",
+                    "friendly_name": "Silent / No Audio",
+                    "type": "silent",
+                    "url": ""
+                }
+            ]
+        }, indent=2) + "\n")
+
+    human_playlist = cdir / "playlists/human_playlist.json"
+    if not human_playlist.exists():
+        human_playlist.write_text("[]`n")
+
+    ffmpeg_playlist = cdir / "playlists/ffmpeg_playlist.txt"
+    if not ffmpeg_playlist.exists():
+        ffmpeg_playlist.write_text("")
+
+    output_json = cdir / "outputs/hls-main.json"
+    if not output_json.exists():
+        output_json.write_text(json.dumps({
+            "output_id": "hls-main",
+            "name": "Main HLS Output",
+            "type": "hls",
+            "enabled": True,
+            "autostart": False,
+            "hls": {
+                "output_dir": f"/var/www/html/hls/{hls_name}",
+                "output_file": output_file,
+                "hls_time": 4,
+                "hls_list_size": 12
+            }
+        }, indent=2) + "\n")
+
+    return redirect(f"/channel/{channel_id}")
+
+
+
+@app.route("/api/system/status")
+def api_system_status():
+    import json
+    import subprocess
+    from pathlib import Path
+
+    status_path = Path("/tmp/custom-streaming-system-status.json")
+    if status_path.exists():
+        try:
+            status = json.loads(status_path.read_text())
+        except Exception:
+            status = {}
+    else:
+        status = {}
+
+    audio_devices = []
+
+    try:
+        result = subprocess.run(["arecord", "-l"], capture_output=True, text=True, timeout=3)
+        if result.returncode == 0:
+            audio_devices = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    except Exception:
+        audio_devices = []
+
+    status["audio_input_list"] = audio_devices
+    status["audio_input_count"] = len(audio_devices)
+
+    return jsonify(status)
+
+
+@app.route("/channel/<channel>/delete", methods=["POST"])
+def delete_channel(channel):
+    import shutil
+    import re
+    from pathlib import Path
+
+    confirm_one = request.form.get("confirm_one", "")
+    confirm_two = request.form.get("confirm_two", "")
+
+    if confirm_one != "yes" or confirm_two != "DELETE":
+        return redirect("/")
+
+    safe_channel = re.sub(r"[^A-Za-z0-9_-]", "", channel)
+
+    if not safe_channel or safe_channel != channel:
+        return redirect("/")
+
+    cdir = Path(CHANNELS_BASE) / safe_channel
+
+    if cdir.exists() and cdir.is_dir():
+        shutil.rmtree(cdir)
+
+    return redirect("/")
+
+
+@app.route("/engineer")
+def engineer():
+    import os
+    import json
+    from pathlib import Path
+
+    channels = []
+    base = Path(CHANNELS_BASE)
+
+    if base.exists():
+        for item in sorted(base.iterdir()):
+            if not item.is_dir():
+                continue
+
+            cfg_path = item / "channel.json"
+            cfg = load_json(str(cfg_path), {})
+
+            outputs = []
+            outputs_dir = item / "outputs"
+            if outputs_dir.exists():
+                for f in sorted(outputs_dir.glob("*.json")):
+                    outputs.append(load_json(str(f), {}))
+
+            channels.append({
+                "id": item.name,
+                "name": cfg.get("name", item.name),
+                "config": cfg,
+                "outputs": outputs,
+                "audio_sources": cfg.get("audio_sources", [])
+            })
+
+    status_path = Path("/tmp/custom-streaming-system-status.json")
+    system_status = {}
+    if status_path.exists():
+        try:
+            system_status = json.loads(status_path.read_text())
+        except Exception:
+            system_status = {}
+
+    return render_template("engineer.html", channels=channels, system_status=system_status)
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
+
+
+
+
+

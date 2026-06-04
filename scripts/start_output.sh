@@ -6,7 +6,7 @@ OUTPUT_ID="$2"
 OUTPUT_CONFIG="$CHANNEL_DIR/outputs/${OUTPUT_ID}.json"
 CHANNEL_CONFIG="$CHANNEL_DIR/channel.json"
 
-OUTPUT_DIR=$(jq -r '.hls.output_dir // "/var/www/html/hls/channel1"' "$OUTPUT_CONFIG")
+OUTPUT_DIR=$(jq -r '.hls.output_dir // "/var/www/html/hls/default"' "$OUTPUT_CONFIG")
 OUTPUT_FILE=$(jq -r '.hls.output_file // "stream.m3u8"' "$OUTPUT_CONFIG")
 TARGET="$OUTPUT_DIR/$OUTPUT_FILE"
 PLAYLIST="$CHANNEL_DIR/playlists/ffmpeg_playlist.txt"
@@ -44,24 +44,20 @@ if [ "$AUDIO_TYPE" = "web" ]; then
     -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 10 \
     -i "$AUDIO_URL" \
     -map 0:v:0 -map 1:a:0 \
-    -vaapi_device /dev/dri/renderD128 \
-    -vf format=nv12,hwupload \
-    -c:v h264_vaapi -b:v 4000k -maxrate 4000k -bufsize 8000k -r 30 -g 60 \
+    -c:v libx264 -preset veryfast -b:v 4000k -maxrate 4000k -bufsize 8000k -r 30 -g 60 \
     -c:a aac -b:a 128k -ar 48000 -ac 2 \
     -f hls -hls_time 4 -hls_list_size 12 \
-    -hls_flags delete_segments+independent_segments \
+    -hls_flags independent_segments+temp_file \
     -hls_segment_filename "$OUTPUT_DIR/segment_%05d.ts" \
     "$TARGET" >> "$LOG_FILE" 2>&1 &
 else
   ffmpeg -hide_banner -y -re -stream_loop -1 \
     -f concat -safe 0 -i "$PLAYLIST" \
     -map 0:v:0 -map 0:a:0? \
-    -vaapi_device /dev/dri/renderD128 \
-    -vf format=nv12,hwupload \
-    -c:v h264_vaapi -b:v 4000k -maxrate 4000k -bufsize 8000k -r 30 -g 60 \
+    -c:v libx264 -preset veryfast -b:v 4000k -maxrate 4000k -bufsize 8000k -r 30 -g 60 \
     -c:a aac -b:a 128k -ar 48000 -ac 2 \
     -f hls -hls_time 4 -hls_list_size 12 \
-    -hls_flags delete_segments+independent_segments \
+    -hls_flags independent_segments+temp_file \
     -hls_segment_filename "$OUTPUT_DIR/segment_%05d.ts" \
     "$TARGET" >> "$LOG_FILE" 2>&1 &
 fi
@@ -69,14 +65,20 @@ fi
 PID=$!
 echo "$PID" > "$PID_FILE"
 
+STARTED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
 cat > "$STATUS_FILE" <<JSON
 {
   "output_id": "$OUTPUT_ID",
   "status": "running",
   "pid": $PID,
+  "started_at": "$STARTED_AT",
   "mode": "recovery-concat-single-audio",
   "audio_source_id": "$AUDIO_ID",
   "audio_source_type": "$AUDIO_TYPE",
   "audio_source_url": "$AUDIO_URL"
 }
 JSON
+
+
+

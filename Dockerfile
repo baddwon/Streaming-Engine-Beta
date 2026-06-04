@@ -1,4 +1,4 @@
-FROM ubuntu:24.04
+﻿FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -36,8 +36,10 @@ COPY scripts/ /opt/custom-streaming/scripts/
 COPY web/ /opt/custom-streaming/web/
 COPY nginx/default /etc/nginx/sites-available/default
 
-RUN chmod +x /opt/custom-streaming/scripts/*.sh
+RUN sed -i 's/\r$//' /opt/custom-streaming/scripts/*.sh && chmod +x /opt/custom-streaming/scripts/*.sh
 
 EXPOSE 80 5000
 
 CMD ["/opt/custom-streaming/scripts/container_start.sh"]
+
+

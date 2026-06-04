@@ -1,6 +1,8 @@
 #!/bin/bash
 
 echo "[INIT] Starting Custom Streaming Engine"
+/opt/custom-streaming/scripts/detect_system.sh
+. /tmp/custom-streaming-encoder.env
 
 mkdir -p /var/www/html/hls
 

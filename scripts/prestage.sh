@@ -3,6 +3,12 @@
 CHANNEL_DIR="$1"
 INPUT_FILE="$2"
 
+if [ -f /tmp/custom-streaming-encoder.env ]; then
+  . /tmp/custom-streaming-encoder.env
+fi
+
+VIDEO_ENCODER="${VIDEO_ENCODER:-x264}"
+
 if [ -z "$CHANNEL_DIR" ] || [ -z "$INPUT_FILE" ]; then
   echo "Usage: prestage.sh <channel_dir> <input_file>"
   exit 1
@@ -29,25 +35,65 @@ OUTFILE="$PRODUCTION/$(printf "%03d" "$NEXT")_${NAME_NO_EXT}.mp4"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Processing: $INPUT_FILE" >> "$LOG_FILE"
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Output: $OUTFILE" >> "$LOG_FILE"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Encoder: $VIDEO_ENCODER" >> "$LOG_FILE"
 
-ffmpeg -y \
--hide_banner \
--i "$INPUT_FILE" \
--map 0:v:0 \
--map 0:a:0? \
--vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=30,format=nv12,hwupload" \
--vaapi_device /dev/dri/renderD128 \
--c:v h264_vaapi \
--b:v 4000k \
--maxrate 4000k \
--bufsize 8000k \
--g 60 \
--c:a aac \
--b:a 192k \
--ar 48000 \
--ac 2 \
--movflags +faststart \
-"$OUTFILE" >> "$LOG_FILE" 2>&1
+if [ "$VIDEO_ENCODER" = "nvenc" ]; then
+  ffmpeg -y -hide_banner \
+  -i "$INPUT_FILE" \
+  -map 0:v:0 \
+  -map 0:a:0? \
+  -vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=30,format=yuv420p" \
+  -c:v h264_nvenc \
+  -preset p4 \
+  -b:v 4000k \
+  -maxrate 4000k \
+  -bufsize 8000k \
+  -g 60 \
+  -c:a aac \
+  -b:a 192k \
+  -ar 48000 \
+  -ac 2 \
+  -movflags +faststart \
+  "$OUTFILE" >> "$LOG_FILE" 2>&1
+
+elif [ "$VIDEO_ENCODER" = "vaapi" ]; then
+  ffmpeg -y -hide_banner \
+  -vaapi_device /dev/dri/renderD128 \
+  -i "$INPUT_FILE" \
+  -map 0:v:0 \
+  -map 0:a:0? \
+  -vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=30,format=nv12,hwupload" \
+  -c:v h264_vaapi \
+  -b:v 4000k \
+  -maxrate 4000k \
+  -bufsize 8000k \
+  -g 60 \
+  -c:a aac \
+  -b:a 192k \
+  -ar 48000 \
+  -ac 2 \
+  -movflags +faststart \
+  "$OUTFILE" >> "$LOG_FILE" 2>&1
+
+else
+  ffmpeg -y -hide_banner \
+  -i "$INPUT_FILE" \
+  -map 0:v:0 \
+  -map 0:a:0? \
+  -vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=30,format=yuv420p" \
+  -c:v libx264 \
+  -preset veryfast \
+  -b:v 4000k \
+  -maxrate 4000k \
+  -bufsize 8000k \
+  -g 60 \
+  -c:a aac \
+  -b:a 192k \
+  -ar 48000 \
+  -ac 2 \
+  -movflags +faststart \
+  "$OUTFILE" >> "$LOG_FILE" 2>&1
+fi
 
 RESULT=$?
 

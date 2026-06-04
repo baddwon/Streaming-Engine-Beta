@@ -187,3 +187,4 @@ fi
 
 ASSET_DUR=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$ASSET" 2>/dev/null)
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] PLAYOUT ASSET READY duration=$ASSET_DUR file=$ASSET" >> "$LOG_FILE"
+
