@@ -61,7 +61,8 @@ def get_stream_url(channel, output, request_host):
     else:
         public_path = f"/hls/{channel.lower()}"
 
-    return f"http://{request_host}:8088{public_path}/{output_file}"
+    hls_public_port = os.environ.get("HLS_PUBLIC_PORT", "8088")
+    return f"http://{request_host}:{hls_public_port}{public_path}/{output_file}"
 
 
 def parse_iso(value):
