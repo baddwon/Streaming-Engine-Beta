@@ -6,87 +6,281 @@
     * { box-sizing:border-box; }
     body { margin:0;font-family:Segoe UI,Arial,sans-serif;background:#0f172a;color:#e5e7eb; }
     a { color:#93c5fd; }
-    .page { max-width:1300px;margin:0 auto;padding:36px 28px; }
-    .card { background:#111827;border:1px solid #334155;border-radius:18px;padding:24px;margin-bottom:24px; }
+    .page { max-width:1350px;margin:0 auto;padding:34px 26px; }
+    .topbar { display:flex;justify-content:space-between;align-items:center;margin-bottom:22px;border-bottom:1px solid #1e293b;padding-bottom:18px; }
+    .card { background:#111827;border:1px solid #334155;border-radius:18px;padding:22px;margin-bottom:22px; }
     .subtle { color:#94a3b8; }
+    .tabs { display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px; }
+    .tab { border:1px solid #334155;background:#020617;color:#e5e7eb;padding:10px 14px;border-radius:999px;cursor:pointer;font-weight:700; }
+    .tab.active { background:#2563eb;border-color:#60a5fa;color:white; }
+    .panel { display:none; }
+    .panel.active { display:block; }
     input, select { background:#020617;color:#e5e7eb;border:1px solid #334155;border-radius:8px;padding:9px;width:100%; }
     .button { border:0;border-radius:10px;padding:10px 14px;background:#2563eb;color:white;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block; }
     .button-danger { background:#991b1b; }
     .grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px; }
     .box { background:#020617;border:1px solid #1e293b;border-radius:12px;padding:14px;margin-top:12px; }
+    pre { white-space:pre-wrap;background:#020617;border-radius:12px;padding:12px;color:#94a3b8;max-height:300px;overflow:auto; }
   </style>
 </head>
 
 <body>
 <div class="page">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
+  <div class="topbar">
     <div>
       <h1 style="margin:0;">Engineer / Global Settings</h1>
-      <div class="subtle">Hardware, encoder, outputs, and audio source configuration.</div>
+      <div class="subtle">Hardware, encoder, outputs, audio sources, and diagnostics.</div>
     </div>
     <a href="/">Back to channels</a>
   </div>
 
-  <div class="card">
-    <h2>System Detection</h2>
-    <div><strong>Video encoder:</strong> {{ system_status.video_encoder or "unknown" }}</div>
-    <div><strong>Reason:</strong> {{ system_status.reason or "unknown" }}</div>
-    <div><strong>NVIDIA:</strong> {{ system_status.nvidia or "unknown" }}</div>
-    <div><strong>VAAPI Intel/AMD:</strong> {{ system_status.vaapi or "unknown" }}</div>
-    <div><strong>Audio device state:</strong> {{ system_status.audio_devices or "unknown" }}</div>
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('system', this)">System</button>
+    <button class="tab" onclick="showTab('audio', this)">Audio Sources</button>
+    <button class="tab" onclick="showTab('outputs', this)">Outputs</button>
+    <button class="tab" onclick="showTab('settings', this)">Settings</button><button class="tab" onclick="showTab('diagnostics', this)">Diagnostics</button>
   </div>
 
-  {% for ch in channels %}
-  <div class="card">
-    <h2>{{ ch.name }} <span class="subtle">({{ ch.id }})</span></h2>
-
-    <h3>Outputs</h3>
-    {% for o in ch.outputs %}
-    <div class="box">
-      <div><strong>{{ o.name or o.output_id }}</strong></div>
-      <div class="subtle">Type: {{ o.type }} | Output ID: {{ o.output_id }}</div>
-      {% if o.hls %}
-      <div class="subtle">HLS dir: {{ o.hls.output_dir }}</div>
-      <div class="subtle">File: {{ o.hls.output_file }}</div>
-      <div class="subtle">List size: {{ o.hls.hls_list_size }}</div>
-      {% endif %}
+  <div id="system" class="panel active">
+    <div class="card">
+      <h2>System Detection</h2>
+      <div><strong>Video encoder:</strong> {{ system_status.video_encoder or "unknown" }}</div>
+      <div><strong>Reason:</strong> {{ system_status.reason or "unknown" }}</div>
+      <div><strong>NVIDIA:</strong> {{ system_status.nvidia or "unknown" }}</div>
+      <div><strong>VAAPI Intel/AMD:</strong> {{ system_status.vaapi or "unknown" }}</div>
+      <div><strong>Audio device state:</strong> {{ system_status.audio_devices or "unknown" }}</div>
     </div>
-    {% endfor %}
+  </div>
 
-    <h3 style="margin-top:22px;">Audio Sources</h3>
+  <div id="audio" class="panel">
+    {% for ch in channels %}
+    <div class="card">
+      <h2>{{ ch.name }} <span class="subtle">({{ ch.id }})</span></h2>
 
-    <form method="post" action="/channel/{{ ch.id }}/audio-source/add">
-      <div class="grid">
-        <input name="source_id" placeholder="source id example: kxxr">
-        <input name="friendly_name" placeholder="friendly name example: 93X">
-        <select name="source_type">
-          <option value="web">Web stream</option>
-          <option value="hls">HLS audio</option>
-          <option value="udp">UDP / Multicast</option>
-        </select>
-        <input name="url" placeholder="http://radio.example.com/live">
-      </div>
-
-      <button class="button" style="margin-top:12px;">Add / Update Audio Source</button>
-    </form>
-
-    {% for source in ch.audio_sources %}
-    <div class="box">
-      <div><strong>{{ source.friendly_name }}</strong></div>
-      <div class="subtle" style="word-break:break-all;">ID: {{ source.id }} | Type: {{ source.type }} | URL: {{ source.url }}</div>
-
-      {% if source.id not in ["embedded", "silent"] %}
-      <form method="post" action="/channel/{{ ch.id }}/audio-source/delete"
-            style="margin-top:8px;"
-            onsubmit="return confirm('Delete this audio source?');">
-        <input type="hidden" name="source_id" value="{{ source.id }}">
-        <button class="button button-danger">Delete audio source</button>
+      <form method="post" action="/channel/{{ ch.id }}/audio-source/add">
+        <div class="grid">
+          <input name="source_id" placeholder="source id example: kxxr">
+          <input name="friendly_name" placeholder="friendly name example: 93X">
+          <select name="source_type">
+            <option value="web">Web stream</option>
+            <option value="hls">HLS audio</option>
+            <option value="udp">UDP / Multicast</option>
+          </select>
+          <input name="url" placeholder="http://radio.example.com/live">
+        </div>
+        <button class="button" style="margin-top:12px;">Add / Update Audio Source</button>
       </form>
-      {% endif %}
+
+      {% for source in ch.audio_sources %}
+      <div class="box">
+        <div><strong>{{ source.friendly_name }}</strong></div>
+        <div class="subtle" style="word-break:break-all;">ID: {{ source.id }} | Type: {{ source.type }} | URL: {{ source.url }}</div>
+
+        {% if source.url %}
+        <button class="button" style="margin-top:8px;" onclick="testAudio('{{ source.type }}', '{{ source.url }}', 'audio-result-{{ ch.id }}-{{ source.id }}')">Test Audio</button>
+        <pre id="audio-result-{{ ch.id }}-{{ source.id }}"></pre>
+        {% endif %}
+
+        {% if source.id not in ["embedded", "silent"] %}
+        <form method="post" action="/channel/{{ ch.id }}/audio-source/delete" style="margin-top:8px;" onsubmit="return confirm('Delete this audio source?');">
+          <input type="hidden" name="source_id" value="{{ source.id }}">
+          <button class="button button-danger">Delete audio source</button>
+        </form>
+        {% endif %}
+      </div>
+      {% endfor %}
     </div>
     {% endfor %}
   </div>
+
+  <div id="outputs" class="panel">
+    {% for ch in channels %}
+    <div class="card">
+      <h2>{{ ch.name }} <span class="subtle">({{ ch.id }})</span></h2>
+      {% for o in ch.outputs %}
+      <div class="box">
+        <div><strong>{{ o.name or o.output_id }}</strong></div>
+        <div class="subtle">Type: {{ o.type }} | Output ID: {{ o.output_id }}</div>
+        {% if o.hls %}
+        <div class="subtle">HLS dir: {{ o.hls.output_dir }}</div>
+        <div class="subtle">File: {{ o.hls.output_file }}</div>
+        <div class="subtle">List size: {{ o.hls.hls_list_size }}</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+
+  
+  <div id="settings" class="panel">
+    <div class="card">
+      <h2>Global Settings</h2>
+      <p class="subtle">These values are used by the web UI and as defaults for newly created channels.</p>
+
+      <form method="post" action="/engineer/settings/save">
+        <div class="grid">
+          <label>
+            <div class="subtle">Web UI Port</div>
+            <input name="web_port" value="{{ settings.web_port }}">
+          </label>
+
+          <label>
+            <div class="subtle">HLS Public Port</div>
+            <input name="hls_port" value="{{ settings.hls_port }}">
+          </label>
+
+          <label>
+            <div class="subtle">Default Encoder</div>
+            <select name="default_encoder">
+              <option value="auto" {% if settings.default_encoder == "auto" %}selected{% endif %}>auto</option>
+              <option value="x264" {% if settings.default_encoder == "x264" %}selected{% endif %}>x264</option>
+              <option value="vaapi" {% if settings.default_encoder == "vaapi" %}selected{% endif %}>vaapi</option>
+              <option value="nvenc" {% if settings.default_encoder == "nvenc" %}selected{% endif %}>nvenc</option>
+            </select>
+          </label>
+
+          <label>
+            <div class="subtle">Default Video Bitrate Kbps</div>
+            <input name="default_video_bitrate" value="{{ settings.default_video_bitrate }}">
+          </label>
+
+          <label>
+            <div class="subtle">Default Audio Bitrate Kbps</div>
+            <input name="default_audio_bitrate" value="{{ settings.default_audio_bitrate }}">
+          </label>
+
+          <label>
+            <div class="subtle">HLS Segment Seconds</div>
+            <input name="default_hls_time" value="{{ settings.default_hls_time }}">
+          </label>
+
+          <label>
+            <div class="subtle">HLS Playlist Size</div>
+            <input name="default_hls_list_size" value="{{ settings.default_hls_list_size }}">
+          </label>
+        </div>
+
+                  <label>
+            <div class="subtle">Normalize Embedded Audio</div>
+            <select name="normalize_embedded_audio">
+              <option value="on" {% if settings.normalize_embedded_audio %}selected{% endif %}>enabled</option>
+              <option value="off" {% if not settings.normalize_embedded_audio %}selected{% endif %}>disabled</option>
+            </select>
+          </label>
+
+          <label>
+            <div class="subtle">Target Loudness LUFS</div>
+            <select name="target_lufs">
+  {% for v in [-24, -23, -20, -18, -16, -14] %}
+  <option value="{{ v }}" {% if settings.target_lufs == v %}selected{% endif %}>{{ v }} LUFS</option>
   {% endfor %}
+</select>
+          </label>
+
+          <label>
+            <div class="subtle">True Peak Max dB</div>
+            <select name="true_peak">
+  {% for v in [-3.0, -2.0, -1.5, -1.0] %}
+  <option value="{{ v }}" {% if settings.true_peak == v %}selected{% endif %}>{{ v }} dB</option>
+  {% endfor %}
+</select>
+          </label>
+
+          <label>
+            <div class="subtle">Loudness Range</div>
+            <select name="loudness_range">
+  {% for v in [7, 9, 11, 13, 15] %}
+  <option value="{{ v }}" {% if settings.loudness_range == v %}selected{% endif %}>{{ v }}</option>
+  {% endfor %}
+</select>
+          </label>
+
+          <label>
+            <div class="subtle">Output Gain dB</div>
+            <input
+  type="range"
+  name="output_gain_db"
+  min="-12"
+  max="12"
+  step="1"
+  value="{{ settings.output_gain_db }}"
+  oninput="document.getElementById('output-gain-display').textContent = this.value + ' dB'"
+>
+<div class="subtle">Current: <span id="output-gain-display">{{ settings.output_gain_db }} dB</span></div>
+          </label>
+
+          <label>
+            <div class="subtle">Limiter Limit</div>
+            <select name="limiter_limit">
+  {% for v in [0.70, 0.80, 0.85, 0.90, 0.95] %}
+  <option value="{{ v }}" {% if settings.limiter_limit == v %}selected{% endif %}>{{ v }}</option>
+  {% endfor %}
+</select>
+          </label>
+        </div>
+
+        <button class="button" style="margin-top:14px;">Save Settings</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="diagnostics" class="panel">
+    <div class="card">
+      <h2>Live Stats</h2>
+      <p class="subtle">Shows resolution, frame rate, codec, audio, and HLS segment health.</p>
+      {% for ch in channels %}
+        <button class="button" onclick="loadStats('{{ ch.id }}', 'stats-{{ ch.id }}')">Load Stats for {{ ch.name }}</button>
+        <pre id="stats-{{ ch.id }}"></pre>
+      {% endfor %}
+    </div>
+    <div class="card">
+      <h2>Diagnostics</h2>
+      <p class="subtle">More log and health tools will be added here.</p>
+    </div>
+  </div>
 </div>
+
+<script>
+function showTab(id, btn) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  btn.classList.add('active');
+}
+
+async function testAudio(type, url, targetId) {
+  const box = document.getElementById(targetId);
+  box.textContent = "Testing audio for 5 seconds...";
+
+  const body = new URLSearchParams();
+  body.set("source_type", type);
+  body.set("url", url);
+
+  try {
+    const res = await fetch("/api/audio/test", {
+      method: "POST",
+      headers: {"Content-Type": "application/x-www-form-urlencoded"},
+      body: body.toString()
+    });
+
+    const data = await res.json();
+    box.textContent = JSON.stringify(data, null, 2);
+  } catch (e) {
+    box.textContent = String(e);
+  }
+}
+async function loadStats(channel, targetId) {
+  const box = document.getElementById(targetId);
+  box.textContent = "Loading stats...";
+  try {
+    const res = await fetch(`/api/channel/${channel}/stats?ts=${Date.now()}`);
+    const data = await res.json();
+    box.textContent = JSON.stringify(data, null, 2);
+  } catch (e) {
+    box.textContent = String(e);
+  }
+}
+</script>
 </body>
 </html>

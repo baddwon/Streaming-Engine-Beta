@@ -9,10 +9,43 @@ from werkzeug.utils import secure_filename
 import json
 import os
 import subprocess
+import time
 from datetime import datetime, timezone
 
 app = Flask(__name__)
 CHANNELS_BASE = "/channels"
+SETTINGS_PATH = "/channels/system/settings.json"
+
+DEFAULT_SETTINGS = {
+    "web_port": 5000,
+    "hls_port": int(os.environ.get("HLS_PUBLIC_PORT", "8088")),
+    "default_encoder": os.environ.get("VIDEO_ENCODER", "auto"),
+    "default_video_bitrate": 4000,
+    "default_audio_bitrate": 128,
+    "default_hls_time": 4,
+    "default_hls_list_size": 24,
+    "normalize_embedded_audio": True,
+    "target_lufs": -16,
+    "true_peak": -1.5,
+    "loudness_range": 11,
+    "output_gain_db": 0,
+    "limiter_limit": 0.90
+}
+
+def load_settings():
+    settings = DEFAULT_SETTINGS.copy()
+    try:
+        existing = load_json(SETTINGS_PATH, {})
+        if existing:
+            settings.update(existing)
+    except Exception:
+        pass
+    return settings
+
+def save_settings(settings):
+    os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
+    save_json(SETTINGS_PATH, settings)
+
 
 
 def load_json(path, default=None):
@@ -61,7 +94,7 @@ def get_stream_url(channel, output, request_host):
     else:
         public_path = f"/hls/{channel.lower()}"
 
-    hls_public_port = os.environ.get("HLS_PUBLIC_PORT", "8088")
+    hls_public_port = str(load_settings().get("hls_port", os.environ.get("HLS_PUBLIC_PORT", "8088")))
     return f"http://{request_host}:{hls_public_port}{public_path}/{output_file}"
 
 
@@ -212,6 +245,42 @@ def load_ingest_status(cdir, cfg):
     }
 
 
+def get_channel_summary(channel_id, cdir, cfg):
+    playlist_path = os.path.join(
+        cdir,
+        cfg.get("files", {}).get("human_playlist", "playlists/human_playlist.json")
+    )
+
+    playlist = load_json(playlist_path, [])
+    outputs, primary_stream_url = load_outputs(channel_id, cdir, cfg)
+
+    running = False
+    encoder = ""
+    audio_source = ""
+    started_at = ""
+    pid = ""
+
+    for output in outputs:
+        status = output.get("status", {})
+        if status.get("status") == "running":
+            running = True
+            encoder = status.get("video_encoder", "")
+            audio_source = status.get("audio_source_id", "")
+            started_at = status.get("started_at", "")
+            pid = status.get("pid", "")
+            break
+
+    return {
+        "playlist_count": len(playlist),
+        "enabled_count": len([x for x in playlist if x.get("enabled")]),
+        "running": running,
+        "encoder": encoder,
+        "audio_source": audio_source,
+        "started_at": started_at,
+        "pid": pid,
+        "primary_stream_url": primary_stream_url
+    }
+
 @app.route("/")
 def index():
     channels = []
@@ -224,7 +293,7 @@ def index():
         cfg = load_json(os.path.join(cdir, "channel.json"))
 
         if cfg:
-            channels.append({"dir": cdir, "name": name, "config": cfg})
+            channels.append({"dir": cdir, "name": name, "config": cfg, "summary": get_channel_summary(name, cdir, cfg)})
 
     return render_template("index.html", channels=channels)
 
@@ -246,7 +315,8 @@ def channel(channel):
         current_item=current_item,
         ingest=ingest,
         audio_sources=cfg.get("audio_sources", []),
-        video_sources=cfg.get("video_sources", [])
+        video_sources=cfg.get("video_sources", []),
+        active_audio_source_id=cfg.get("active_audio_source_id", "embedded")
     )
 
 
@@ -269,6 +339,67 @@ def api_channel_status(channel):
     })
 
 
+
+@app.route("/channel/<channel>/audio/select", methods=["POST"])
+def select_channel_audio(channel):
+    cdir = channel_dir(channel)
+    cfg_path = os.path.join(cdir, "channel.json")
+    cfg = load_json(cfg_path, {})
+
+    defaults = [
+        {"id": "embedded", "friendly_name": "Embedded File Audio", "type": "embedded", "url": ""},
+        {"id": "silent", "friendly_name": "Silent / No Audio", "type": "silent", "url": ""}
+    ]
+
+    sources = cfg.get("audio_sources", [])
+    by_id = {s.get("id"): s for s in sources if s.get("id")}
+
+    for s in defaults:
+        by_id.setdefault(s["id"], s)
+
+    cfg["audio_sources"] = [by_id["embedded"], by_id["silent"]] + [
+        s for sid, s in by_id.items() if sid not in ["embedded", "silent"]
+    ]
+
+    source_id = request.form.get("active_audio_source_id", "embedded").strip()
+    valid_ids = [s.get("id") for s in cfg["audio_sources"]]
+
+    if source_id not in valid_ids:
+        source_id = "embedded"
+
+    cfg["active_audio_source_id"] = source_id
+    save_json(cfg_path, cfg)
+
+    # Apply immediately by restarting HLS output.
+    try:
+        subprocess.run(
+            ["/opt/custom-streaming/scripts/stop_output.sh", cdir, "hls-main"],
+            timeout=10
+        )
+
+        subprocess.Popen(
+            ["/opt/custom-streaming/scripts/start_output.sh", cdir, "hls-main"]
+        )
+
+        status_path = os.path.join(cdir, "runtime", "status", "hls-main.json")
+        stream_path = "/var/www/html/hls/Ch_" + channel + "/stream.m3u8"
+
+        # Give FFmpeg time to relaunch and write a usable HLS playlist.
+        for _ in range(20):
+            status = load_json(status_path, {})
+            if (
+                status.get("status") == "running"
+                and status.get("audio_source_id") == source_id
+                and os.path.exists(stream_path)
+                and os.path.getsize(stream_path) > 100
+            ):
+                break
+            time.sleep(0.5)
+
+    except Exception as e:
+        print(f"Audio output restart failed: {e}")
+
+    return redirect(f"/channel/{channel}")
 @app.route("/channel/<channel>/audio-source/add", methods=["POST"])
 def add_audio_source(channel):
     cdir = channel_dir(channel)
@@ -562,6 +693,7 @@ def add_channel():
                 "human_playlist": "playlists/human_playlist.json",
                 "ffmpeg_playlist": "playlists/ffmpeg_playlist.txt"
             },
+            "active_audio_source_id": "embedded",
             "audio_sources": [
                 {
                     "id": "embedded",
@@ -597,8 +729,8 @@ def add_channel():
             "hls": {
                 "output_dir": f"/var/www/html/hls/{hls_name}",
                 "output_file": output_file,
-                "hls_time": 4,
-                "hls_list_size": 12
+                "hls_time": load_settings().get("default_hls_time", 4),
+                "hls_list_size": load_settings().get("default_hls_list_size", 24)
             }
         }, indent=2) + "\n")
 
@@ -610,6 +742,7 @@ def add_channel():
 def api_system_status():
     import json
     import subprocess
+    import time
     from pathlib import Path
 
     status_path = Path("/tmp/custom-streaming-system-status.json")
@@ -700,7 +833,201 @@ def engineer():
         except Exception:
             system_status = {}
 
-    return render_template("engineer.html", channels=channels, system_status=system_status)
+    return render_template("engineer.html", channels=channels, system_status=system_status, settings=load_settings())
+
+
+@app.route("/api/audio/test", methods=["POST"])
+def api_audio_test():
+    import subprocess
+    import time
+    import json
+
+    source_type = request.form.get("source_type", "web").strip()
+    url = request.form.get("url", "").strip()
+
+    if source_type not in ["web", "hls"] or not url:
+        return jsonify({
+            "ok": False,
+            "error": "Only web/HLS URL audio test is currently supported."
+        })
+
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-nostats",
+        "-t", "5",
+        "-i", url,
+        "-af", "volumedetect",
+        "-f", "null",
+        "-"
+    ]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=12)
+        output = (result.stderr or "") + (result.stdout or "")
+
+        mean_volume = None
+        max_volume = None
+
+        for line in output.splitlines():
+            if "mean_volume:" in line:
+                mean_volume = line.split("mean_volume:", 1)[1].strip()
+            if "max_volume:" in line:
+                max_volume = line.split("max_volume:", 1)[1].strip()
+
+        return jsonify({
+            "ok": result.returncode == 0,
+            "mean_volume": mean_volume,
+            "max_volume": max_volume,
+            "raw_tail": "\n".join(output.splitlines()[-20:])
+        })
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e)
+        })
+
+
+@app.route("/engineer/settings/save", methods=["POST"])
+def save_engineer_settings():
+    settings = load_settings()
+
+    for key in [
+        "web_port",
+        "hls_port",
+        "default_video_bitrate",
+        "default_audio_bitrate",
+        "default_hls_time",
+        "default_hls_list_size",
+        "target_lufs",
+        "true_peak",
+        "loudness_range",
+        "output_gain_db",
+        "limiter_limit"
+    ]:
+        try:
+            settings[key] = int(request.form.get(key, settings.get(key)))
+        except Exception:
+            pass
+
+    settings["default_encoder"] = request.form.get("default_encoder", settings.get("default_encoder", "auto"))
+    settings["normalize_embedded_audio"] = request.form.get("normalize_embedded_audio", "off") == "on"
+
+    save_settings(settings)
+    return redirect("/engineer")
+
+
+@app.route("/api/channel/<channel>/stats")
+def api_channel_stats(channel):
+    import subprocess
+    import time
+    import json
+    import os
+    import glob
+    from pathlib import Path
+
+    cdir, cfg, playlist = load_channel_data(channel)
+    outputs, primary_stream_url = load_outputs(channel, cdir, cfg)
+
+    stats = {
+        "channel": channel,
+        "primary_stream_url": primary_stream_url,
+        "playlist": [],
+        "outputs": [],
+        "hls": {}
+    }
+
+    def probe_media(path):
+        if not path or not os.path.exists(path):
+            return {}
+
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v", "quiet",
+                    "-print_format", "json",
+                    "-show_format",
+                    "-show_streams",
+                    path
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15
+            )
+            if result.returncode != 0:
+                return {"error": result.stderr[-1000:]}
+            return json.loads(result.stdout or "{}")
+        except Exception as e:
+            return {"error": str(e)}
+
+    for item in playlist:
+        media_stats = probe_media(item.get("file"))
+        video = {}
+        audio = {}
+
+        for stream in media_stats.get("streams", []):
+            if stream.get("codec_type") == "video" and not video:
+                video = {
+                    "codec": stream.get("codec_name"),
+                    "width": stream.get("width"),
+                    "height": stream.get("height"),
+                    "pix_fmt": stream.get("pix_fmt"),
+                    "avg_frame_rate": stream.get("avg_frame_rate"),
+                    "r_frame_rate": stream.get("r_frame_rate"),
+                    "bit_rate": stream.get("bit_rate")
+                }
+            if stream.get("codec_type") == "audio" and not audio:
+                audio = {
+                    "codec": stream.get("codec_name"),
+                    "sample_rate": stream.get("sample_rate"),
+                    "channels": stream.get("channels"),
+                    "channel_layout": stream.get("channel_layout"),
+                    "bit_rate": stream.get("bit_rate")
+                }
+
+        stats["playlist"].append({
+            "title": item.get("title"),
+            "file": item.get("file"),
+            "enabled": item.get("enabled"),
+            "duration_seconds": item.get("duration_seconds"),
+            "video": video,
+            "audio": audio
+        })
+
+    for output in outputs:
+        hls = output.get("hls", {})
+        output_dir = hls.get("output_dir")
+        segment_files = []
+        folder_size = 0
+
+        if output_dir and os.path.isdir(output_dir):
+            segment_files = sorted(glob.glob(os.path.join(output_dir, "*.ts")))
+            for f in segment_files:
+                try:
+                    folder_size += os.path.getsize(f)
+                except Exception:
+                    pass
+
+        stats["outputs"].append({
+            "output_id": output.get("output_id"),
+            "name": output.get("name"),
+            "type": output.get("type"),
+            "status": output.get("status", {}),
+            "hls": {
+                "output_dir": output_dir,
+                "actual_public_url": hls.get("actual_public_url"),
+                "segment_count": len(segment_files),
+                "folder_size_bytes": folder_size,
+                "latest_segment": os.path.basename(segment_files[-1]) if segment_files else None,
+                "latest_segment_age_seconds": (
+                    round(__import__("time").time() - os.path.getmtime(segment_files[-1]), 2)
+                    if segment_files else None
+                )
+            }
+        })
+
+    return jsonify(stats)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

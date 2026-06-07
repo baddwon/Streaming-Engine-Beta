@@ -15,6 +15,22 @@ if [ -z "$CHANNEL_DIR" ] || [ -z "$INPUT_FILE" ]; then
 fi
 
 CONFIG="$CHANNEL_DIR/channel.json"
+SETTINGS="/channels/system/settings.json"
+
+NORMALIZE_AUDIO=$(jq -r '.normalize_embedded_audio // true' "$SETTINGS" 2>/dev/null)
+TARGET_LUFS=$(jq -r '.target_lufs // -16' "$SETTINGS" 2>/dev/null)
+TRUE_PEAK=$(jq -r '.true_peak // -1.5' "$SETTINGS" 2>/dev/null)
+LOUDNESS_RANGE=$(jq -r '.loudness_range // 11' "$SETTINGS" 2>/dev/null)
+
+TARGET_LUFS="${TARGET_LUFS:--16}"
+TRUE_PEAK="${TRUE_PEAK:--1.5}"
+LOUDNESS_RANGE="${LOUDNESS_RANGE:-11}"
+
+if [ "$NORMALIZE_AUDIO" = "true" ]; then
+  AUDIO_FILTER="loudnorm=I=${TARGET_LUFS}:TP=${TRUE_PEAK}:LRA=${LOUDNESS_RANGE}"
+else
+  AUDIO_FILTER="anull"
+fi
 
 INCOMING="$CHANNEL_DIR/$(jq -r '.paths.incoming // "incoming"' "$CONFIG")"
 PRODUCTION="$CHANNEL_DIR/$(jq -r '.paths.production // "production"' "$CONFIG")"
@@ -49,6 +65,7 @@ if [ "$VIDEO_ENCODER" = "nvenc" ]; then
   -maxrate 4000k \
   -bufsize 8000k \
   -g 60 \
+  -af "$AUDIO_FILTER" \
   -c:a aac \
   -b:a 192k \
   -ar 48000 \
@@ -68,6 +85,7 @@ elif [ "$VIDEO_ENCODER" = "vaapi" ]; then
   -maxrate 4000k \
   -bufsize 8000k \
   -g 60 \
+  -af "$AUDIO_FILTER" \
   -c:a aac \
   -b:a 192k \
   -ar 48000 \
@@ -87,6 +105,7 @@ else
   -maxrate 4000k \
   -bufsize 8000k \
   -g 60 \
+  -af "$AUDIO_FILTER" \
   -c:a aac \
   -b:a 192k \
   -ar 48000 \

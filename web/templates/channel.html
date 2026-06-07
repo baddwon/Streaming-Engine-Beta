@@ -2,13 +2,15 @@
 <html>
 <head>
   <title>{{ cfg.name or channel }} - Custom Streaming Engine</title>
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest">, 5000);
+}
+</script>
   <style>
     * { box-sizing:border-box; }
     body { margin:0;font-family:Segoe UI,Arial,sans-serif;background:#0f172a;color:#e5e7eb; }
     a { color:#93c5fd; }
     .page { max-width:1500px;margin:0 auto;padding:28px; }
-    .header { display:flex;justify-content:space-between;align-items:center;gap:18px;margin-bottom:18px;background:transparent;border:0;border-bottom:1px solid #263244;border-radius:0;padding:10px 0 18px 0; }
+    .compact-header { opacity:.96; } .header { display:flex;justify-content:space-between;align-items:center;gap:18px;margin-bottom:18px;background:transparent;border:0;border-bottom:1px solid #263244;border-radius:0;padding:10px 0 18px 0; }
     h1 { margin:0;font-size:28px; }
     h2 { margin-top:0;font-size:24px; }
     .subtle { color:#94a3b8;font-size:14px; }
@@ -37,10 +39,9 @@
   {% set first_output = outputs[0] if outputs else none %}
   {% set first_status = first_output.status if first_output else {} %}
 
-  <div class="header">
+  <div class="header compact-header">
     <div>
-      <h1>{{ cfg.name or channel }}</h1>
-      <div class="subtle">Channel ID: {{ cfg.channel_id or channel }}</div>
+      <h1>{{ cfg.name or channel }}</h1><div class="subtle">Channel {{ cfg.channel_id or channel }}{% if first_status.video_encoder %} | Encoder {{ first_status.video_encoder }}{% endif %}{% if first_status.audio_source_id %} | Audio {{ first_status.audio_source_id }}{% endif %}</div>
       <div style="margin-top:10px;">
         {% if first_status.status == "running" %}
           <span class="badge badge-running">RUNNING</span>
@@ -62,7 +63,7 @@
   <div class="grid-main">
     <div>
       <div class="card">
-        <h2>On Air</h2>
+        <h2>On Air / Now Playing</h2>
         {% if primary_stream_url %}
           <video id="preview" class="preview-video" controls muted playsinline></video>
           <div id="preview-status" class="subtle" style="margin-top:10px;">Loading preview...</div>
@@ -79,6 +80,20 @@
                 <div class="subtle">Unknown</div>
               {% endif %}
             </div>
+          <div style="margin-top:12px;background:#020617;border:1px solid #1e293b;border-radius:12px;padding:12px;">
+            <div class="subtle" style="font-size:12px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">Output Health</div>
+            {% if first_status.status == "running" %}
+              <span class="badge badge-running">RUNNING</span>
+            {% else %}
+              <span class="badge badge-stopped">{{ first_status.status or "STOPPED" }}</span>
+            {% endif %}
+            <div class="subtle" style="margin-top:8px;">
+              Encoder: {{ first_status.video_encoder or "unknown" }} |
+              Audio: {{ first_status.audio_source_id or "embedded" }} |
+              PID: {{ first_status.pid or "" }}
+            </div>
+            <div class="subtle">Started: {{ first_status.started_at or "" }}</div>
+          </div>
           </div>
           <div style="background:#020617;padding:10px;border-radius:10px;word-break:break-all;margin-top:12px;font-size:13px;">
             <div class="subtle" style="margin-bottom:6px;">Preview source</div>
@@ -114,12 +129,28 @@
               video.src = streamUrl;
               setStatus("Native playback mode.", "#86efac");
             }
-          </script>
+</script>
         {% else %}
           <div class="subtle">No stream URL available. Start an output to enable preview.</div>
         {% endif %}
       </div>
 
+      <div class="card">
+        <h2>Channel Audio</h2>
+        <p class="subtle">Applies to the entire playlist. Choose embedded file audio, silence, or one external source.</p>
+
+        <form method="post" action="/channel/{{ channel }}/audio/select">
+          <select name="active_audio_source_id">
+            {% for source in audio_sources %}
+            <option value="{{ source.id }}" {% if active_audio_source_id|string == source.id|string %}selected{% endif %}>
+              {{ source.friendly_name }}{% if source.type %} - {{ source.type }}{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+
+          <button class="button" style="margin-top:12px;">Apply Channel Audio</button>
+        </form>
+      </div>
       <div class="card">
         <h2>Media</h2>
         <form method="post" action="/channel/{{ channel }}/upload" enctype="multipart/form-data">
@@ -161,24 +192,13 @@
 
               <div class="subtle" style="margin-top:8px;">{{ item.filename }}</div>
 
-              <div class="two-col" style="margin-top:10px;">
-                <div>
-                  <div class="subtle" style="margin-bottom:4px;">Video source</div>
-                  <select name="video_source_id">
-                    {% for source in video_sources %}
-                    <option value="{{ source.id }}" {% if item.video_source_id == source.id %}selected{% endif %}>{{ source.friendly_name }}</option>
-                    {% endfor %}
-                  </select>
-                </div>
-
-                <div>
-                  <div class="subtle" style="margin-bottom:4px;">Audio source</div>
-                  <select name="audio_source_id">
-                    {% for source in audio_sources %}
-                    <option value="{{ source.id }}" {% if item.audio_source_id == source.id %}selected{% endif %}>{{ source.friendly_name }}</option>
-                    {% endfor %}
-                  </select>
-                </div>
+                            <div style="margin-top:10px;">
+                <div class="subtle" style="margin-bottom:4px;">Video source</div>
+                <select name="video_source_id">
+                  {% for source in video_sources %}
+                  <option value="{{ source.id }}" {% if item.video_source_id == source.id %}selected{% endif %}>{{ source.friendly_name }}</option>
+                  {% endfor %}
+                </select>
               </div>
 
               <div class="subtle" style="margin-top:8px;">Duration: {{ "%.1f"|format(item.duration_seconds or 0) }} sec</div>
@@ -262,6 +282,7 @@ async function refreshStatus() {
 
 setInterval(refreshStatus, 5000);
 refreshStatus();
+}
 </script>
 
 </body>
