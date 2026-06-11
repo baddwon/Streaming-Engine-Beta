@@ -2,9 +2,7 @@
 <html>
 <head>
   <title>{{ cfg.name or channel }} - Custom Streaming Engine</title>
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest">, 5000);
-}
-</script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <style>
     * { box-sizing:border-box; }
     body { margin:0;font-family:Segoe UI,Arial,sans-serif;background:#0f172a;color:#e5e7eb; }
@@ -19,15 +17,22 @@
     .badge-stopped { background:#7f1d1d;color:#fecaca; }
     .badge-info { background:#1e3a8a;color:#bfdbfe; }
     .grid-main { display:grid;grid-template-columns:minmax(420px,1.1fr) minmax(440px,1fr);gap:22px;align-items:start; }
-    .card { background:#111827;border:1px solid #263244;border-radius:18px;padding:22px;margin-bottom:22px; }
+    .card { background:#111827;border:1px solid #263244;border-radius:18px;padding:14px;margin-bottom:14px; }
     .preview-video { width:100%;background:#020617;border-radius:14px;min-height:280px; }
-    .button { border:0;padding:10px 14px;border-radius:10px;cursor:pointer;font-weight:700;color:white;background:#2563eb;text-decoration:none;display:inline-block; }
+    .button { border:0;padding:8px 12px;border-radius:9px;cursor:pointer;font-weight:700;color:white;background:#2563eb;text-decoration:none;display:inline-block; }
     .button-danger { background:#991b1b; }
     input, select { background:#020617;color:#e5e7eb;border:1px solid #334155;border-radius:8px;padding:9px;width:100%; }
-    .playlist-item { background:#020617;border:1px solid #1e293b;border-radius:14px;padding:14px;margin-bottom:12px;cursor:grab; }
-    .playlist-row { display:grid;grid-template-columns:34px 44px 1fr;gap:10px;align-items:center; }
+    .playlist-item { background:#020617;border:1px solid #1e293b;border-radius:10px;padding:7px;margin-bottom:7px;cursor:grab; }
+    .playlist-row { display:grid;grid-template-columns:24px 32px 1fr;gap:8px;align-items:center; }
     .two-col { display:grid;grid-template-columns:1fr 1fr;gap:14px; }
     .three-col { display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px; }
+    .ops-toolbar { display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px; }
+    .ops-panel { background:#111827;border:1px solid #263244;border-radius:14px;padding:12px; }
+    .ops-row { display:flex;gap:10px;align-items:end; }
+    .ops-row select,.ops-row input[type=file] { flex:1; }
+    .mini-stats { display:flex;gap:18px;align-items:center;margin-top:10px; }
+    .mini-stats div { font-size:13px;color:#94a3b8; }
+    .mini-stats strong { color:#e5e7eb;font-size:16px;display:block; }
     .log-box { background:#020617;color:#94a3b8;border-radius:12px;padding:12px;font-size:12px;max-height:260px;overflow:auto;white-space:pre-wrap; }
     @media (max-width:1000px) { .grid-main,.two-col,.three-col { grid-template-columns:1fr; } .page { padding:16px; } }
   </style>
@@ -49,17 +54,36 @@
           <span class="badge badge-stopped">STOPPED</span>
         {% endif %}
         {% if first_output %}<span class="badge badge-info">{{ first_output.type }}</span>{% endif %}
+        <span class="subtle" style="margin-left:10px;">Output Health:</span>
+        {% if first_status.status == "running" %}
+          <span class="badge badge-running">RUNNING</span>
+        {% else %}
+          <span class="badge badge-stopped">{{ first_status.status or "STOPPED" }}</span>
+        {% endif %}
+        <span class="subtle" style="margin-left:10px;">PID: {{ first_status.pid or "" }}</span>
+        <span class="subtle" style="margin-left:10px;">Started: {{ first_status.started_at or "" }}</span>
       </div>
+
+      <form method="post" action="/channel/{{ channel }}/audio/select" style="display:flex;gap:8px;align-items:center;margin-top:8px;max-width:560px;">
+        <div class="subtle" style="white-space:nowrap;">Channel Audio</div>
+        <select name="active_audio_source_id" style="flex:1;">
+          {% for source in audio_sources %}
+          <option value="{{ source.id }}" {% if active_audio_source_id|string == source.id|string %}selected{% endif %}>
+            {{ source.friendly_name }}{% if source.type %} - {{ source.type }}{% endif %}
+          </option>
+          {% endfor %}
+        </select>
+        <button class="button" style="white-space:nowrap;">Apply</button>
+      </form>
     </div>
 
     <div style="text-align:right;">
       <a href="/">Back to channels</a>
       {% if primary_stream_url %}
-      <div class="subtle" style="margin-top:10px;word-break:break-all;">{{ primary_stream_url }}</div>
+      <div class="subtle" style="margin-top:10px;word-break:break-all;"><a href="{{ primary_stream_url }}">{{ primary_stream_url }}</a></div>
       {% endif %}
     </div>
   </div>
-
   <div class="grid-main">
     <div>
       <div class="card">
@@ -80,27 +104,8 @@
                 <div class="subtle">Unknown</div>
               {% endif %}
             </div>
-          <div style="margin-top:12px;background:#020617;border:1px solid #1e293b;border-radius:12px;padding:12px;">
-            <div class="subtle" style="font-size:12px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">Output Health</div>
-            {% if first_status.status == "running" %}
-              <span class="badge badge-running">RUNNING</span>
-            {% else %}
-              <span class="badge badge-stopped">{{ first_status.status or "STOPPED" }}</span>
-            {% endif %}
-            <div class="subtle" style="margin-top:8px;">
-              Encoder: {{ first_status.video_encoder or "unknown" }} |
-              Audio: {{ first_status.audio_source_id or "embedded" }} |
-              PID: {{ first_status.pid or "" }}
-            </div>
-            <div class="subtle">Started: {{ first_status.started_at or "" }}</div>
           </div>
-          </div>
-          <div style="background:#020617;padding:10px;border-radius:10px;word-break:break-all;margin-top:12px;font-size:13px;">
-            <div class="subtle" style="margin-bottom:6px;">Preview source</div>
-            <a href="{{ primary_stream_url }}">{{ primary_stream_url }}</a>
-          </div>
-
-          <script>
+<script>
             const video = document.getElementById('preview');
             const statusBox = document.getElementById('preview-status');
             const streamUrl = "{{ primary_stream_url }}" + "?cacheBust=" + Date.now();
@@ -135,41 +140,26 @@
         {% endif %}
       </div>
 
-      <div class="card">
-        <h2>Channel Audio</h2>
-        <p class="subtle">Applies to the entire playlist. Choose embedded file audio, silence, or one external source.</p>
+        <div class="card">
+          <h2 style="font-size:20px;margin-bottom:10px;">Media Upload</h2>
+          <form method="post" action="/channel/{{ channel }}/upload" enctype="multipart/form-data" style="display:flex;gap:10px;align-items:center;">
+            <input type="file" name="media" multiple style="flex:1;">
+            <button class="button">Upload</button>
+          </form>
 
-        <form method="post" action="/channel/{{ channel }}/audio/select">
-          <select name="active_audio_source_id">
-            {% for source in audio_sources %}
-            <option value="{{ source.id }}" {% if active_audio_source_id|string == source.id|string %}selected{% endif %}>
-              {{ source.friendly_name }}{% if source.type %} - {{ source.type }}{% endif %}
-            </option>
-            {% endfor %}
-          </select>
+          <div class="mini-stats">
+            <div><strong id="incoming-count">{{ ingest.incoming|length }}</strong>Incoming</div>
+            <div><strong id="processed-count">{{ ingest.processed|length }}</strong>Processed</div>
+            <div><strong id="failed-count">{{ ingest.failed|length }}</strong>Failed</div>
+          </div>
 
-          <button class="button" style="margin-top:12px;">Apply Channel Audio</button>
-        </form>
-      </div>
-      <div class="card">
-        <h2>Media</h2>
-        <form method="post" action="/channel/{{ channel }}/upload" enctype="multipart/form-data">
-          <input type="file" name="media" multiple>
-          <button class="button" style="margin-top:12px;">Upload to Incoming</button>
-        </form>
-
-        <div class="three-col" style="margin-top:18px;">
-          <div><strong id="incoming-count">{{ ingest.incoming|length }}</strong><div class="subtle">Incoming</div></div>
-          <div><strong id="processed-count">{{ ingest.processed|length }}</strong><div class="subtle">Processed</div></div>
-          <div><strong id="failed-count">{{ ingest.failed|length }}</strong><div class="subtle">Failed</div></div>
+          <details style="margin-top:10px;">
+            <summary class="subtle" style="cursor:pointer;">Ingest log</summary>
+            <pre id="ingest-log" class="log-box">{{ ingest.log_tail }}</pre>
+          </details>
         </div>
 
-        <details style="margin-top:18px;">
-          <summary>Show ingest log</summary>
-          <pre id="ingest-log" class="log-box">{{ ingest.log_tail }}</pre>
-        </details>
-      </div>
-    </div>
+</div>
 
     <div>
       <div class="card">
@@ -185,25 +175,24 @@
               <input type="hidden" name="enabled_value" value="{% if item.enabled %}true{% else %}false{% endif %}">
 
               <div class="playlist-row">
-                <div class="subtle" style="font-size:24px;">=</div>
-                <input type="checkbox" class="enabled-toggle" {% if item.enabled %}checked{% endif %} style="width:34px;height:34px;cursor:pointer;accent-color:#2563eb;">
+                <div class="subtle" style="font-size:18px;cursor:grab;">=</div>
+                <input type="checkbox" class="enabled-toggle" {% if item.enabled %}checked{% endif %} style="width:22px;height:22px;cursor:pointer;accent-color:#2563eb;">
                 <input name="title" value="{{ item.title }}">
               </div>
 
-              <div class="subtle" style="margin-top:8px;">{{ item.filename }}</div>
+              <div class="subtle" style="margin-top:6px;">
+                {{ item.filename }} &nbsp; • &nbsp; {{ "%.1f"|format(item.duration_seconds or 0) }}s
+              </div>
 
-                            <div style="margin-top:10px;">
-                <div class="subtle" style="margin-bottom:4px;">Video source</div>
-                <select name="video_source_id">
+              <div style="display:flex;gap:8px;align-items:center;margin-top:6px;">
+                <select name="video_source_id" style="flex:1;">
                   {% for source in video_sources %}
                   <option value="{{ source.id }}" {% if item.video_source_id == source.id %}selected{% endif %}>{{ source.friendly_name }}</option>
                   {% endfor %}
                 </select>
+
+                <button type="submit" form="delete-{{ loop.index }}" class="button button-danger" style="margin:0;white-space:nowrap;">Delete</button>
               </div>
-
-              <div class="subtle" style="margin-top:8px;">Duration: {{ "%.1f"|format(item.duration_seconds or 0) }} sec</div>
-
-              <button type="submit" form="delete-{{ loop.index }}" class="button button-danger" style="margin-top:10px;">Delete content</button>
             </div>
             {% endfor %}
           </div>
@@ -227,11 +216,15 @@ const playlist = document.getElementById('playlist');
 let dragged = null;
 
 if (playlist) {
-  playlist.addEventListener('dragstart', (e) => { dragged = e.target.closest('.playlist-item'); });
+  playlist.addEventListener('dragstart', (e) => {
+    dragged = e.target.closest('.playlist-item');
+  });
+
   playlist.addEventListener('dragover', (e) => {
     e.preventDefault();
     const target = e.target.closest('.playlist-item');
     if (!target || target === dragged) return;
+
     const rect = target.getBoundingClientRect();
     const next = (e.clientY - rect.top) / rect.height > 0.5;
     playlist.insertBefore(dragged, next ? target.nextSibling : target);
@@ -270,10 +263,15 @@ async function refreshStatus() {
     }
 
     if (data.ingest) {
-      document.getElementById('incoming-count').textContent = data.ingest.incoming.length;
-      document.getElementById('processed-count').textContent = data.ingest.processed.length;
-      document.getElementById('failed-count').textContent = data.ingest.failed.length;
-      document.getElementById('ingest-log').textContent = data.ingest.log_tail || '';
+      const incoming = document.getElementById('incoming-count');
+      const processed = document.getElementById('processed-count');
+      const failed = document.getElementById('failed-count');
+      const log = document.getElementById('ingest-log');
+
+      if (incoming) incoming.textContent = data.ingest.incoming.length;
+      if (processed) processed.textContent = data.ingest.processed.length;
+      if (failed) failed.textContent = data.ingest.failed.length;
+      if (log) log.textContent = data.ingest.log_tail || '';
     }
   } catch (e) {
     console.log(e);
@@ -282,7 +280,6 @@ async function refreshStatus() {
 
 setInterval(refreshStatus, 5000);
 refreshStatus();
-}
 </script>
 
 </body>

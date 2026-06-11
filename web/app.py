@@ -29,7 +29,29 @@ DEFAULT_SETTINGS = {
     "true_peak": -1.5,
     "loudness_range": 11,
     "output_gain_db": 0,
-    "limiter_limit": 0.90
+    "limiter_limit": 0.90,
+    "audio_sources": [
+        {"id": "embedded", "friendly_name": "Embedded File Audio", "type": "embedded", "url": ""},
+        {"id": "silent", "friendly_name": "Silent / No Audio", "type": "silent", "url": ""}
+    ],
+    "network_policy": {
+        "mode": "preview",
+        "timezone": "America/Chicago",
+        "ntp_server": "pool.ntp.org",
+        "auto_allow_lan": True,
+        "manual_allowed_subnets": ["192.168.1.0/24", "192.168.66.0/24", "10.10.10.0/24"],
+        "allow_web_ui_from_lan": True,
+        "allow_hls_from_lan": True,
+        "allow_vnc_from_lan": False,
+        "allow_public_access": False,
+        "allow_dns": True,
+        "allow_ntp": True,
+        "allow_configured_audio_sources": True,
+        "allow_configured_outputs": True,
+        "allow_multicast_when_configured": True,
+        "maintenance_mode": False,
+        "maintenance_timeout_minutes": 30
+    }
 }
 
 def load_settings():
@@ -45,6 +67,24 @@ def load_settings():
 def save_settings(settings):
     os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
     save_json(SETTINGS_PATH, settings)
+
+
+def get_audio_sources():
+    settings = load_settings()
+    sources = settings.get("audio_sources", [])
+
+    by_id = {}
+    for source in sources:
+        sid = source.get("id")
+        if sid:
+            by_id[sid] = source
+
+    by_id.setdefault("embedded", {"id": "embedded", "friendly_name": "Embedded File Audio", "type": "embedded", "url": ""})
+    by_id.setdefault("silent", {"id": "silent", "friendly_name": "Silent / No Audio", "type": "silent", "url": ""})
+
+    ordered = [by_id["embedded"], by_id["silent"]]
+    ordered += [v for k, v in by_id.items() if k not in ["embedded", "silent"]]
+    return ordered
 
 
 
@@ -67,11 +107,11 @@ def channel_dir(channel):
 
 
 def restart_output(cdir, output_id="hls-main"):
-    subprocess.run(["/opt/custom-streaming/scripts/stop_output.sh", cdir, output_id])
+    subprocess.run(["/opt/streaming-engine-beta/scripts/stop_output.sh", cdir, output_id])
     subprocess.run(["bash", "-c", "rm -f /var/www/html/hls/channel1/*"])
     subprocess.run(["bash", "-c", f"rm -f {cdir}/runtime/pids/*"])
     subprocess.run(["bash", "-c", f"rm -f {cdir}/runtime/status/*"])
-    subprocess.run(["/opt/custom-streaming/scripts/start_output.sh", cdir, output_id])
+    subprocess.run(["/opt/streaming-engine-beta/scripts/start_output.sh", cdir, output_id])
 
 
 def tail_file(path, lines=40):
@@ -314,7 +354,7 @@ def channel(channel):
         primary_stream_url=primary_stream_url,
         current_item=current_item,
         ingest=ingest,
-        audio_sources=cfg.get("audio_sources", []),
+        audio_sources=get_audio_sources(),
         video_sources=cfg.get("video_sources", []),
         active_audio_source_id=cfg.get("active_audio_source_id", "embedded")
     )
@@ -346,23 +386,8 @@ def select_channel_audio(channel):
     cfg_path = os.path.join(cdir, "channel.json")
     cfg = load_json(cfg_path, {})
 
-    defaults = [
-        {"id": "embedded", "friendly_name": "Embedded File Audio", "type": "embedded", "url": ""},
-        {"id": "silent", "friendly_name": "Silent / No Audio", "type": "silent", "url": ""}
-    ]
-
-    sources = cfg.get("audio_sources", [])
-    by_id = {s.get("id"): s for s in sources if s.get("id")}
-
-    for s in defaults:
-        by_id.setdefault(s["id"], s)
-
-    cfg["audio_sources"] = [by_id["embedded"], by_id["silent"]] + [
-        s for sid, s in by_id.items() if sid not in ["embedded", "silent"]
-    ]
-
     source_id = request.form.get("active_audio_source_id", "embedded").strip()
-    valid_ids = [s.get("id") for s in cfg["audio_sources"]]
+    valid_ids = [s.get("id") for s in get_audio_sources()]
 
     if source_id not in valid_ids:
         source_id = "embedded"
@@ -373,18 +398,17 @@ def select_channel_audio(channel):
     # Apply immediately by restarting HLS output.
     try:
         subprocess.run(
-            ["/opt/custom-streaming/scripts/stop_output.sh", cdir, "hls-main"],
+            ["/opt/streaming-engine-beta/scripts/stop_output.sh", cdir, "hls-main"],
             timeout=10
         )
 
         subprocess.Popen(
-            ["/opt/custom-streaming/scripts/start_output.sh", cdir, "hls-main"]
+            ["/opt/streaming-engine-beta/scripts/start_output.sh", cdir, "hls-main"]
         )
 
         status_path = os.path.join(cdir, "runtime", "status", "hls-main.json")
-        stream_path = "/var/www/html/hls/Ch_" + channel + "/stream.m3u8"
+        stream_path = os.path.join(os.environ.get("HLS_ROOT", "/var/www/html/hls"), "Ch_" + channel, "stream.m3u8")
 
-        # Give FFmpeg time to relaunch and write a usable HLS playlist.
         for _ in range(20):
             status = load_json(status_path, {})
             if (
@@ -400,11 +424,9 @@ def select_channel_audio(channel):
         print(f"Audio output restart failed: {e}")
 
     return redirect(f"/channel/{channel}")
-@app.route("/channel/<channel>/audio-source/add", methods=["POST"])
-def add_audio_source(channel):
-    cdir = channel_dir(channel)
-    cfg_path = os.path.join(cdir, "channel.json")
-    cfg = load_json(cfg_path, {})
+@app.route("/engineer/audio-source/add", methods=["POST"])
+def add_audio_source():
+    settings = load_settings()
 
     source_id = request.form.get("source_id", "").strip()
     friendly_name = request.form.get("friendly_name", "").strip()
@@ -415,53 +437,64 @@ def add_audio_source(channel):
     source_id = re.sub(r"[^A-Za-z0-9_-]", "", source_id.replace(" ", "_"))
 
     if not source_id:
-        return redirect(f"/channel/{channel}")
+        return redirect("/engineer?tab=audio")
+
+    if source_id in ["embedded", "silent"]:
+        return redirect("/engineer?tab=audio")
 
     if not friendly_name:
         friendly_name = source_id
 
-    cfg.setdefault("audio_sources", [])
-    cfg["audio_sources"] = [s for s in cfg["audio_sources"] if s.get("id") != source_id]
+    settings.setdefault("audio_sources", get_audio_sources())
+    settings["audio_sources"] = [s for s in settings["audio_sources"] if s.get("id") != source_id]
 
-    cfg["audio_sources"].append({
+    settings["audio_sources"].append({
         "id": source_id,
         "friendly_name": friendly_name,
         "type": source_type,
         "url": url
     })
 
-    save_json(cfg_path, cfg)
+    save_settings(settings)
+    return redirect("/engineer?tab=audio")
 
-    return redirect(f"/channel/{channel}")
-
-@app.route("/channel/<channel>/audio-source/delete", methods=["POST"])
-def delete_audio_source(channel):
-    cdir = channel_dir(channel)
-    cfg_path = os.path.join(cdir, "channel.json")
-    cfg = load_json(cfg_path, {})
+@app.route("/engineer/audio-source/delete", methods=["POST"])
+def delete_audio_source():
+    settings = load_settings()
 
     source_id = request.form.get("source_id", "").strip()
 
     if source_id in ["embedded", "silent"]:
-        return redirect(f"/channel/{channel}")
+        return redirect("/engineer?tab=audio")
 
-    cfg.setdefault("audio_sources", [])
-    cfg["audio_sources"] = [s for s in cfg["audio_sources"] if s.get("id") != source_id]
+    settings.setdefault("audio_sources", get_audio_sources())
+    settings["audio_sources"] = [s for s in settings["audio_sources"] if s.get("id") != source_id]
+    save_settings(settings)
 
-    playlist_path = os.path.join(
-        cdir,
-        cfg.get("files", {}).get("human_playlist", "playlists/human_playlist.json")
-    )
+    # Any channel using the deleted source falls back to embedded.
+    base = Path(CHANNELS_BASE)
+    if base.exists():
+        for item in base.iterdir():
+            if not item.is_dir() or item.name == "system":
+                continue
 
-    playlist = load_json(playlist_path, [])
-    for item in playlist:
-        if item.get("audio_source_id") == source_id:
-            item["audio_source_id"] = "embedded"
+            cfg_path = item / "channel.json"
+            cfg = load_json(str(cfg_path), {})
+            if cfg.get("active_audio_source_id") == source_id:
+                cfg["active_audio_source_id"] = "embedded"
+                save_json(str(cfg_path), cfg)
 
-    save_json(cfg_path, cfg)
-    save_json(playlist_path, playlist)
+            playlist_path = item / cfg.get("files", {}).get("human_playlist", "playlists/human_playlist.json")
+            playlist = load_json(str(playlist_path), [])
+            changed = False
+            for row in playlist:
+                if row.get("audio_source_id") == source_id:
+                    row["audio_source_id"] = "embedded"
+                    changed = True
+            if changed:
+                save_json(str(playlist_path), playlist)
 
-    return redirect(f"/channel/{channel}")
+    return redirect("/engineer?tab=audio")
 
 
 @app.route("/channel/<channel>/upload", methods=["POST"])
@@ -496,7 +529,7 @@ def upload_file(channel):
         # background watcher was not running because the channel was created
         # after container startup.
         subprocess.Popen([
-            "/opt/custom-streaming/scripts/prestage.sh",
+            "/opt/streaming-engine-beta/scripts/prestage.sh",
             cdir,
             dest
         ])
@@ -541,7 +574,7 @@ def delete_content(channel):
 
     save_json(playlist_path, playlist)
 
-    subprocess.run(["/opt/custom-streaming/scripts/generate_playlist.sh", cdir])
+    subprocess.run(["/opt/streaming-engine-beta/scripts/generate_playlist.sh", cdir])
     restart_output(cdir, "hls-main")
 
     return redirect(f"/channel/{channel}")
@@ -587,8 +620,36 @@ def save_playlist(channel):
         })
 
     save_json(playlist_path, playlist)
-    subprocess.run(["/opt/custom-streaming/scripts/generate_playlist.sh", cdir])
-    restart_output(cdir, "hls-main")
+    subprocess.run(["/opt/streaming-engine-beta/scripts/generate_playlist.sh", cdir])
+
+    # Apply playlist changes immediately using the same stop/start/wait behavior
+    # as the channel audio selector. This keeps the user experience consistent.
+    try:
+        subprocess.run(
+            ["/opt/streaming-engine-beta/scripts/stop_output.sh", cdir, "hls-main"],
+            timeout=10
+        )
+
+        subprocess.Popen(
+            ["/opt/streaming-engine-beta/scripts/start_output.sh", cdir, "hls-main"]
+        )
+
+        status_path = os.path.join(cdir, "runtime", "status", "hls-main.json")
+        stream_path = os.path.join(os.environ.get("HLS_ROOT", "/var/www/html/hls"), "Ch_" + channel, "stream.m3u8")
+
+        # Give FFmpeg time to relaunch and write a usable HLS playlist.
+        for _ in range(20):
+            status = load_json(status_path, {})
+            if (
+                status.get("status") == "running"
+                and os.path.exists(stream_path)
+                and os.path.getsize(stream_path) > 100
+            ):
+                break
+            time.sleep(0.5)
+
+    except Exception as e:
+        print(f"Playlist output restart failed: {e}")
 
     return redirect(f"/channel/{channel}")
 
@@ -598,7 +659,7 @@ def output_action(channel, output_id, action):
     cdir = channel_dir(channel)
     script = "start_output.sh" if action == "start" else "stop_output.sh"
 
-    subprocess.Popen(["/opt/custom-streaming/scripts/" + script, cdir, output_id])
+    subprocess.Popen(["/opt/streaming-engine-beta/scripts/" + script, cdir, output_id])
 
     return redirect(f"/channel/{channel}")
 
@@ -619,7 +680,7 @@ def flush_channel(channel):
             output_id = output.get("output_id")
 
             if output_id:
-                subprocess.run(["/opt/custom-streaming/scripts/stop_output.sh", cdir, output_id])
+                subprocess.run(["/opt/streaming-engine-beta/scripts/stop_output.sh", cdir, output_id])
 
     folders = [
         "incoming", "production", "processed", "failed",
@@ -694,20 +755,6 @@ def add_channel():
                 "ffmpeg_playlist": "playlists/ffmpeg_playlist.txt"
             },
             "active_audio_source_id": "embedded",
-            "audio_sources": [
-                {
-                    "id": "embedded",
-                    "friendly_name": "Embedded File Audio",
-                    "type": "embedded",
-                    "url": ""
-                },
-                {
-                    "id": "silent",
-                    "friendly_name": "Silent / No Audio",
-                    "type": "silent",
-                    "url": ""
-                }
-            ]
         }, indent=2) + "\n")
 
     human_playlist = cdir / "playlists/human_playlist.json"
@@ -727,7 +774,7 @@ def add_channel():
             "enabled": True,
             "autostart": False,
             "hls": {
-                "output_dir": f"/var/www/html/hls/{hls_name}",
+                "output_dir": os.path.join(os.environ.get("HLS_ROOT", "/var/www/html/hls"), hls_name),
                 "output_file": output_file,
                 "hls_time": load_settings().get("default_hls_time", 4),
                 "hls_list_size": load_settings().get("default_hls_list_size", 24)
@@ -788,10 +835,98 @@ def delete_channel(channel):
 
     cdir = Path(CHANNELS_BASE) / safe_channel
 
+    # Stop any running output before deleting files.
+    if cdir.exists() and cdir.is_dir():
+        try:
+            subprocess.run(
+                ["/opt/streaming-engine-beta/scripts/stop_output.sh", str(cdir), "hls-main"],
+                timeout=10
+            )
+        except Exception as e:
+            print(f"Delete channel stop_output failed: {e}")
+
     if cdir.exists() and cdir.is_dir():
         shutil.rmtree(cdir)
 
+    # Remove stale HLS output so recreated channels don't play old segments.
+    hls_dir = Path("/var/www/html/hls") / ("Ch_" + safe_channel)
+    if hls_dir.exists() and hls_dir.is_dir():
+        shutil.rmtree(hls_dir)
+
     return redirect("/")
+
+
+def build_network_policy_preview(settings):
+    policy = settings.get("network_policy", {})
+    audio_sources = settings.get("audio_sources", [])
+    hls_port = settings.get("hls_port", 8088)
+    web_port = settings.get("web_port", 5000)
+
+    lines = []
+    lines.append("MODE: " + str(policy.get("mode", "preview")).upper())
+    lines.append("")
+    lines.append("DEFAULT POLICY")
+    lines.append("- Inbound: DROP unless explicitly allowed")
+    lines.append("- Outbound: DROP unless explicitly allowed")
+    lines.append("- Established/related traffic: ALLOW")
+    lines.append("")
+
+    lines.append("ALLOWED LAN SUBNETS")
+    if policy.get("auto_allow_lan", True):
+        lines.append("- Auto-detect local LAN subnets: ENABLED")
+    for subnet in policy.get("manual_allowed_subnets", []):
+        lines.append("- Manual allow: " + subnet)
+    lines.append("")
+
+    lines.append("INBOUND ALLOW RULES")
+    if policy.get("allow_web_ui_from_lan", True):
+        lines.append(f"- Allow LAN to Web UI TCP/{web_port}")
+    if policy.get("allow_hls_from_lan", True):
+        lines.append(f"- Allow LAN to HLS TCP/{hls_port}")
+    if policy.get("allow_vnc_from_lan", False):
+        lines.append("- Allow LAN to VNC/noVNC TCP/5901,6901")
+    if policy.get("allow_public_access", False):
+        lines.append("- Public inbound access: ENABLED")
+    else:
+        lines.append("- Public inbound access: DISABLED")
+    lines.append("")
+
+    lines.append("OUTBOUND ALLOW RULES")
+    if policy.get("allow_dns", True):
+        lines.append("- Allow DNS UDP/TCP 53 to configured resolvers")
+    if policy.get("allow_ntp", True):
+        lines.append("- Allow NTP UDP/123 to " + str(policy.get("ntp_server", "pool.ntp.org")))
+
+    if policy.get("allow_configured_audio_sources", True):
+        for src in audio_sources:
+            url = src.get("url", "")
+            typ = src.get("type", "")
+            sid = src.get("id", "")
+            if url and typ in ["web", "hls"]:
+                lines.append(f"- Allow audio source {sid}: {url}")
+
+    if policy.get("allow_configured_outputs", True):
+        lines.append("- Allow configured output destinations only")
+
+    if policy.get("allow_multicast_when_configured", True):
+        lines.append("- Allow multicast only for configured multicast inputs/outputs")
+    lines.append("")
+
+    lines.append("TIME / LOGGING")
+    lines.append("- Timezone: " + str(policy.get("timezone", "America/Chicago")))
+    lines.append("- NTP server: " + str(policy.get("ntp_server", "pool.ntp.org")))
+    lines.append("- Internal timestamps should remain UTC")
+    lines.append("- Web UI should display friendly local time")
+    lines.append("")
+
+    lines.append("MAINTENANCE MODE")
+    if policy.get("maintenance_mode", False):
+        lines.append("- Maintenance mode: ENABLED")
+    else:
+        lines.append("- Maintenance mode: disabled")
+    lines.append("- Maintenance timeout minutes: " + str(policy.get("maintenance_timeout_minutes", 30)))
+
+    return "\\n".join(lines)
 
 
 @app.route("/engineer")
@@ -833,7 +968,55 @@ def engineer():
         except Exception:
             system_status = {}
 
-    return render_template("engineer.html", channels=channels, system_status=system_status, settings=load_settings())
+    settings = load_settings()
+    return render_template(
+        "engineer.html",
+        channels=channels,
+        system_status=system_status,
+        settings=settings,
+        audio_sources=get_audio_sources(),
+        network_policy_preview=build_network_policy_preview(settings)
+    )
+
+
+@app.route("/engineer/network/save", methods=["POST"])
+def save_network_policy():
+    settings = load_settings()
+    policy = settings.get("network_policy", DEFAULT_SETTINGS.get("network_policy", {}).copy())
+
+    policy["mode"] = request.form.get("mode", policy.get("mode", "preview"))
+    policy["timezone"] = request.form.get("timezone", policy.get("timezone", "America/Chicago")).strip()
+    policy["ntp_server"] = request.form.get("ntp_server", policy.get("ntp_server", "pool.ntp.org")).strip()
+
+    subnets_raw = request.form.get("manual_allowed_subnets", "")
+    policy["manual_allowed_subnets"] = [
+        x.strip() for x in subnets_raw.replace(",", "\\n").splitlines() if x.strip()
+    ]
+
+    for key in [
+        "auto_allow_lan",
+        "allow_web_ui_from_lan",
+        "allow_hls_from_lan",
+        "allow_vnc_from_lan",
+        "allow_public_access",
+        "allow_dns",
+        "allow_ntp",
+        "allow_configured_audio_sources",
+        "allow_configured_outputs",
+        "allow_multicast_when_configured",
+        "maintenance_mode"
+    ]:
+        policy[key] = request.form.get(key, "off") == "on"
+
+    try:
+        policy["maintenance_timeout_minutes"] = int(request.form.get("maintenance_timeout_minutes", policy.get("maintenance_timeout_minutes", 30)))
+    except Exception:
+        policy["maintenance_timeout_minutes"] = 30
+
+    settings["network_policy"] = policy
+    save_settings(settings)
+
+    return redirect("/engineer?tab=network")
 
 
 @app.route("/api/audio/test", methods=["POST"])
@@ -914,7 +1097,7 @@ def save_engineer_settings():
     settings["normalize_embedded_audio"] = request.form.get("normalize_embedded_audio", "off") == "on"
 
     save_settings(settings)
-    return redirect("/engineer")
+    return redirect("/engineer?tab=settings")
 
 
 @app.route("/api/channel/<channel>/stats")

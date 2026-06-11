@@ -15,7 +15,7 @@ if [ -z "$CHANNEL_DIR" ] || [ -z "$INPUT_FILE" ]; then
 fi
 
 CONFIG="$CHANNEL_DIR/channel.json"
-SETTINGS="${STREAMING_ENGINE_CONFIG:-${CHANNEL_ROOT:-/channels}/system/settings.json}"
+SETTINGS="/channels/system/settings.json"
 
 NORMALIZE_AUDIO=$(jq -r '.normalize_embedded_audio // true' "$SETTINGS" 2>/dev/null)
 TARGET_LUFS=$(jq -r '.target_lufs // -16' "$SETTINGS" 2>/dev/null)
@@ -45,9 +45,21 @@ LOG_FILE="$LOG_DIR/prestage-watch.log"
 BASENAME="$(basename "$INPUT_FILE")"
 NAME_NO_EXT="${BASENAME%.*}"
 
-COUNT=$(find "$PRODUCTION" -maxdepth 1 -type f -iname "*.mp4" | wc -l)
-NEXT=$((COUNT + 1))
-OUTFILE="$PRODUCTION/$(printf "%03d" "$NEXT")_${NAME_NO_EXT}.mp4"
+LOCK_FILE="$CHANNEL_DIR/runtime/prestage.lock"
+mkdir -p "$(dirname "$LOCK_FILE")"
+
+exec 9>"$LOCK_FILE"
+flock 9
+
+NEXT=1
+while true; do
+  PREFIX="$(printf "%03d" "$NEXT")"
+  if ! find "$PRODUCTION" -maxdepth 1 -type f -name "${PREFIX}_*.mp4" | grep -q .; then
+    OUTFILE="$PRODUCTION/${PREFIX}_${NAME_NO_EXT}.mp4"
+    break
+  fi
+  NEXT=$((NEXT + 1))
+done
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Processing: $INPUT_FILE" >> "$LOG_FILE"
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Output: $OUTFILE" >> "$LOG_FILE"
@@ -124,7 +136,7 @@ else
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAILED: $INPUT_FILE" >> "$LOG_FILE"
 fi
 
-/opt/streaming-engine-beta/scripts/generate_human_playlist.sh "$CHANNEL_DIR"
-/opt/streaming-engine-beta/scripts/generate_playlist.sh "$CHANNEL_DIR"
+/opt/custom-streaming/scripts/generate_human_playlist.sh "$CHANNEL_DIR"
+/opt/custom-streaming/scripts/generate_playlist.sh "$CHANNEL_DIR"
 
 exit "$RESULT"

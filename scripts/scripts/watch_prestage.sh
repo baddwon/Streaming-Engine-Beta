@@ -28,10 +28,10 @@ while true; do
 
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Incoming media detected: $FILE" >> "$LOG_FILE"
 
-    /opt/streaming-engine-beta/scripts/prestage.sh "$CHANNEL_DIR" "$FILE"
+    /opt/custom-streaming/scripts/prestage.sh "$CHANNEL_DIR" "$FILE"
 
-    /opt/streaming-engine-beta/scripts/generate_human_playlist.sh "$CHANNEL_DIR"
-    /opt/streaming-engine-beta/scripts/generate_playlist.sh "$CHANNEL_DIR"
+    /opt/custom-streaming/scripts/generate_human_playlist.sh "$CHANNEL_DIR"
+    /opt/custom-streaming/scripts/generate_playlist.sh "$CHANNEL_DIR"
 
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Import complete. Live output NOT restarted. Apply Playlist Changes to put enabled items on air." >> "$LOG_FILE"
 

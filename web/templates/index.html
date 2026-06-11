@@ -106,33 +106,24 @@
   {% endif %}
 
   <div class="card" style="margin-top:26px;">
-    <h2>Add Channel</h2>
-    <p class="subtle">The HLS folder is automatically generated as <strong>Ch_ + Channel ID</strong>, for example <strong>Ch_75</strong>.</p>
-
-    <form method="POST" action="/channel/add" class="grid" style="align-items:end;">
+    <h2 title="HLS folder is automatically generated as Ch_<Channel ID>, for example Ch_75.">Add Channel</h2>
+<form method="POST" action="/channel/add" class="grid" style="align-items:end;">
       <label>
         <div style="color:#93c5fd;font-size:13px;margin-bottom:6px;">Channel ID</div>
-        <input name="channel_id" placeholder="75" required>
+        <input name="channel_id" placeholder="" required>
       </label>
 
       <label>
         <div style="color:#93c5fd;font-size:13px;margin-bottom:6px;">Channel Name</div>
-        <input name="friendly_name" placeholder="Heron Lake Local">
+        <input name="friendly_name" placeholder="">
       </label>
 
-      <label>
-        <div style="color:#93c5fd;font-size:13px;margin-bottom:6px;">Stream Filename</div>
-        <input name="output_file" value="stream.m3u8">
-      </label>
+      <input type="hidden" name="output_file" value="stream.m3u8">
 
       <button class="button" type="submit">Create Channel</button>
     </form>
   </div>
-
-  <div class="card">
-    <h2>System Summary</h2>
-    <div id="system-status" class="subtle">Loading system status...</div>
-  </div>
+</div>
 
 </div>
 
@@ -149,25 +140,7 @@ function confirmDeleteChannel(form) {
   return true;
 }
 
-async function loadSystemStatus() {
-  try {
-    const res = await fetch('/api/system/status?ts=' + Date.now());
-    const data = await res.json();
 
-    document.getElementById('system-status').innerHTML = `
-      <div><strong>Video encoder:</strong> ${data.video_encoder || 'unknown'}</div>
-      <div><strong>Reason:</strong> ${data.reason || 'unknown'}</div>
-      <div><strong>NVIDIA:</strong> ${data.nvidia || 'unknown'}</div>
-      <div><strong>VAAPI Intel/AMD:</strong> ${data.vaapi || 'unknown'}</div>
-      <div><strong>Audio device state:</strong> ${data.audio_devices || 'unknown'}</div>
-    `;
-  } catch (e) {
-    document.getElementById('system-status').innerText = 'Unable to load system status.';
-  }
-}
-
-loadSystemStatus();
-setInterval(loadSystemStatus, 10000);
 </script>
 
 </body>

@@ -7,7 +7,7 @@ CHANNEL_CONFIG="$CHANNEL_DIR/channel.json"
 OUTPUT_CONFIG="$CHANNEL_DIR/outputs/${OUTPUT_ID}.json"
 HUMAN_PLAYLIST="$CHANNEL_DIR/$(jq -r '.files.human_playlist // "playlists/human_playlist.json"' "$CHANNEL_CONFIG")"
 
-OUTPUT_DIR=$(jq -r '.hls.output_dir // "${HLS_ROOT:-/var/www/html/hls}/channel1"' "$OUTPUT_CONFIG")
+OUTPUT_DIR=$(jq -r '.hls.output_dir // "/var/www/html/hls/channel1"' "$OUTPUT_CONFIG")
 
 LOG_DIR="$CHANNEL_DIR/runtime/logs"
 PID_DIR="$CHANNEL_DIR/runtime/pids"
@@ -172,8 +172,8 @@ feed_audio_item() {
   AUDIO_ID=$(echo "$ITEM" | jq -r '.audio_source_id // "embedded"')
   DUR=$(duration_for_item "$ITEM")
 
-  AUDIO_TYPE=$(jq -r --arg id "$AUDIO_ID" '.audio_sources[]? | select(.id == $id) | .type' "$CHANNEL_CONFIG" | head -1)
-  AUDIO_URL=$(jq -r --arg id "$AUDIO_ID" '.audio_sources[]? | select(.id == $id) | .url' "$CHANNEL_CONFIG" | head -1)
+  AUDIO_TYPE=$(jq -r --arg id "$AUDIO_ID" '.audio_sources[]? | select(.id == $id) | .type' /channels/system/settings.json 2>/dev/null | head -1)
+  AUDIO_URL=$(jq -r --arg id "$AUDIO_ID" '.audio_sources[]? | select(.id == $id) | .url' /channels/system/settings.json 2>/dev/null | head -1)
 
   AUDIO_TYPE="${AUDIO_TYPE:-embedded}"
   AUDIO_URL="${AUDIO_URL:-}"

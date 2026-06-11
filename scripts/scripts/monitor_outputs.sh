@@ -34,7 +34,7 @@ while true; do
 
       echo "[$(date '+%Y-%m-%d %H:%M:%S')] Output down: $OUTPUT_ID. Restarting." >> "$LOG_FILE"
 
-      /opt/streaming-engine-beta/scripts/start_output.sh \
+      /opt/custom-streaming/scripts/start_output.sh \
         "$CHANNEL_DIR" \
         "$OUTPUT_ID" >> "$LOG_FILE" 2>&1
     fi

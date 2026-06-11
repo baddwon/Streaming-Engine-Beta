@@ -20,6 +20,21 @@
     .button-danger { background:#991b1b; }
     .grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px; }
     .box { background:#020617;border:1px solid #1e293b;border-radius:12px;padding:14px;margin-top:12px; }
+    .compact-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px; }
+    .mini-card { background:#020617;border:1px solid #1e293b;border-radius:12px;padding:12px; }
+    .section-title { margin:0 0 12px 0;color:#bfdbfe;font-size:15px;text-transform:uppercase;letter-spacing:.08em;font-weight:800; }
+    .settings-section { background:#020617;border:1px solid #334155;border-radius:14px;padding:16px;margin-top:16px; }
+    .settings-section p { margin-top:0; }
+    .checkbox-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-top:12px; }
+    .check-row { display:flex;gap:8px;align-items:center;background:#020617;border:1px solid #1e293b;border-radius:10px;padding:10px; }
+    .check-row input { width:auto; }
+    textarea.policy-box { width:100%;min-height:180px;background:#020617;color:#e5e7eb;border:1px solid #334155;border-radius:10px;padding:10px; }
+    pre.policy-preview { max-height:520px; }
+    .inline-actions { display:flex;gap:10px;align-items:center;flex-wrap:wrap; }
+    .source-card { display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;background:#020617;border:1px solid #1e293b;border-radius:12px;padding:12px;margin-top:10px; }
+    .setting-row { display:grid;grid-template-columns:260px 1fr;gap:14px;align-items:center;margin-top:10px; }
+    .setting-row input,.setting-row select { max-width:420px; }
+    .wide-control input,.wide-control select { max-width:none; }
     pre { white-space:pre-wrap;background:#020617;border-radius:12px;padding:12px;color:#94a3b8;max-height:300px;overflow:auto; }
   </style>
 </head>
@@ -38,100 +53,143 @@
     <button class="tab active" onclick="showTab('system', this)">System</button>
     <button class="tab" onclick="showTab('audio', this)">Audio Sources</button>
     <button class="tab" onclick="showTab('outputs', this)">Outputs</button>
-    <button class="tab" onclick="showTab('settings', this)">Settings</button><button class="tab" onclick="showTab('diagnostics', this)">Diagnostics</button>
+    <button class="tab" onclick="showTab('settings', this)">Settings</button>
+    <button class="tab" onclick="showTab('network', this)">Network Security</button>
+    <button class="tab" onclick="showTab('diagnostics', this)">Diagnostics</button>
   </div>
 
   <div id="system" class="panel active">
     <div class="card">
-      <h2>System Detection</h2>
-      <div><strong>Video encoder:</strong> {{ system_status.video_encoder or "unknown" }}</div>
-      <div><strong>Reason:</strong> {{ system_status.reason or "unknown" }}</div>
-      <div><strong>NVIDIA:</strong> {{ system_status.nvidia or "unknown" }}</div>
-      <div><strong>VAAPI Intel/AMD:</strong> {{ system_status.vaapi or "unknown" }}</div>
-      <div><strong>Audio device state:</strong> {{ system_status.audio_devices or "unknown" }}</div>
+      <h2>System</h2>
+      <p class="subtle">Current machine and encoder detection. More CPU, memory, GPU, disk, and host identifiers will be added here.</p>
+
+      <div class="compact-grid">
+        <div class="mini-card">
+          <div class="subtle">Video Encoder</div>
+          <strong>{{ system_status.video_encoder or "unknown" }}</strong>
+        </div>
+        <div class="mini-card">
+          <div class="subtle">NVIDIA</div>
+          <strong>{{ system_status.nvidia or "not_available" }}</strong>
+        </div>
+        <div class="mini-card">
+          <div class="subtle">VAAPI Intel/AMD</div>
+          <strong>{{ system_status.vaapi or "not_available" }}</strong>
+        </div>
+        <div class="mini-card">
+          <div class="subtle">Audio Devices</div>
+          <strong>{{ system_status.audio_devices or "not_available" }}</strong>
+        </div>
+      </div>
+
+      <div class="box">
+        <div class="subtle">Detection reason</div>
+        {{ system_status.reason or "unknown" }}
+      </div>
     </div>
   </div>
 
-  <div id="audio" class="panel">
-    {% for ch in channels %}
-    <div class="card">
-      <h2>{{ ch.name }} <span class="subtle">({{ ch.id }})</span></h2>
 
-      <form method="post" action="/channel/{{ ch.id }}/audio-source/add">
+  <div id="audio" class="panel">
+    <div class="card">
+      <h2>Global Audio Sources</h2>
+      <p class="subtle">Define reusable audio sources once, then select them from any channel.</p>
+
+      <form method="post" action="/engineer/audio-source/add">
         <div class="grid">
-          <input name="source_id" placeholder="source id example: kxxr">
-          <input name="friendly_name" placeholder="friendly name example: 93X">
+          <input name="source_id" placeholder="source id">
+          <input name="friendly_name" placeholder="friendly name">
           <select name="source_type">
             <option value="web">Web stream</option>
             <option value="hls">HLS audio</option>
             <option value="udp">UDP / Multicast</option>
+            <option value="aux">Local / AUX input</option>
+            <option value="internal">Internal audio source</option>
           </select>
-          <input name="url" placeholder="http://radio.example.com/live">
+          <input name="url" placeholder="URL or device name">
         </div>
         <button class="button" style="margin-top:12px;">Add / Update Audio Source</button>
       </form>
 
-      {% for source in ch.audio_sources %}
-      <div class="box">
-        <div><strong>{{ source.friendly_name }}</strong></div>
-        <div class="subtle" style="word-break:break-all;">ID: {{ source.id }} | Type: {{ source.type }} | URL: {{ source.url }}</div>
+      {% for source in audio_sources %}
+      <div class="source-card">
+        <div>
+          <strong>{{ source.friendly_name }}</strong>
+          <div class="subtle" style="word-break:break-all;">
+            ID: {{ source.id }} | Type: {{ source.type }}{% if source.url %} | URL: {{ source.url }}{% endif %}
+          </div>
+          <pre id="audio-result-{{ source.id }}"></pre>
+        </div>
 
-        {% if source.url %}
-        <button class="button" style="margin-top:8px;" onclick="testAudio('{{ source.type }}', '{{ source.url }}', 'audio-result-{{ ch.id }}-{{ source.id }}')">Test Audio</button>
-        <pre id="audio-result-{{ ch.id }}-{{ source.id }}"></pre>
+        {% if source.url and source.type in ["web", "hls"] %}
+        <button class="button" onclick="testAudio('{{ source.type }}', '{{ source.url }}', 'audio-result-{{ source.id }}')">Test</button>
+        {% else %}
+        <span></span>
         {% endif %}
 
         {% if source.id not in ["embedded", "silent"] %}
-        <form method="post" action="/channel/{{ ch.id }}/audio-source/delete" style="margin-top:8px;" onsubmit="return confirm('Delete this audio source?');">
+        <form method="post" action="/engineer/audio-source/delete" onsubmit="return confirm('Delete this audio source? Channels using it will fall back to embedded audio.');">
           <input type="hidden" name="source_id" value="{{ source.id }}">
-          <button class="button button-danger">Delete audio source</button>
+          <button class="button button-danger">Delete</button>
         </form>
+        {% else %}
+        <span></span>
         {% endif %}
       </div>
       {% endfor %}
     </div>
-    {% endfor %}
   </div>
+
 
   <div id="outputs" class="panel">
-    {% for ch in channels %}
+    {% for ch in channels if ch.id != "system" and ch.name != "system" %}
     <div class="card">
       <h2>{{ ch.name }} <span class="subtle">({{ ch.id }})</span></h2>
+
       {% for o in ch.outputs %}
-      <div class="box">
-        <div><strong>{{ o.name or o.output_id }}</strong></div>
+      <div class="mini-card">
+        <strong>{{ o.name or o.output_id }}</strong>
         <div class="subtle">Type: {{ o.type }} | Output ID: {{ o.output_id }}</div>
         {% if o.hls %}
-        <div class="subtle">HLS dir: {{ o.hls.output_dir }}</div>
-        <div class="subtle">File: {{ o.hls.output_file }}</div>
-        <div class="subtle">List size: {{ o.hls.hls_list_size }}</div>
+        <div class="subtle">Internal path: {{ o.hls.output_dir }}</div>
+        <div class="subtle">File: {{ o.hls.output_file }} | Segment: {{ o.hls.hls_time }} sec | List size: {{ o.hls.hls_list_size }}</div>
+        {% if o.hls.actual_public_url %}
+        <div class="subtle" style="margin-top:6px;word-break:break-all;">
+          Public URL: <a href="{{ o.hls.actual_public_url }}">{{ o.hls.actual_public_url }}</a>
+        </div>
+        {% endif %}
         {% endif %}
       </div>
       {% endfor %}
     </div>
     {% endfor %}
+
+    <div class="card">
+      <h2>Future Output Work</h2>
+      <div class="compact-grid">
+        <div class="mini-card"><strong>Duplicate Streams</strong><div class="subtle">Run multiple outputs from the same playlist.</div></div>
+        <div class="mini-card"><strong>Custom HLS Outputs</strong><div class="subtle">Separate folders, filenames, segment sizes, and list sizes.</div></div>
+        <div class="mini-card"><strong>UDP / Multicast</strong><div class="subtle">Target multicast groups or LAN destinations.</div></div>
+        <div class="mini-card"><strong>RTMP / SRT</strong><div class="subtle">Future support for external streaming destinations.</div></div>
+      </div>
+    </div>
   </div>
 
-  
+
   <div id="settings" class="panel">
     <div class="card">
       <h2>Global Settings</h2>
-      <p class="subtle">These values are used by the web UI and as defaults for newly created channels.</p>
+      <p class="subtle">Defaults used by the web UI and newly created channels.</p>
 
       <form method="post" action="/engineer/settings/save">
-        <div class="grid">
-          <label>
-            <div class="subtle">Web UI Port</div>
-            <input name="web_port" value="{{ settings.web_port }}">
-          </label>
+        <div class="settings-section">
+          <div class="section-title">Web / Output Defaults</div>
+          <p class="subtle">Ports, encoder choice, bitrate, and HLS defaults used for new channels.</p>
 
-          <label>
-            <div class="subtle">HLS Public Port</div>
-            <input name="hls_port" value="{{ settings.hls_port }}">
-          </label>
-
-          <label>
-            <div class="subtle">Default Encoder</div>
+          <div class="compact-grid">
+          <label><div class="subtle">Web UI Port</div><input name="web_port" value="{{ settings.web_port }}"></label>
+          <label><div class="subtle">HLS Public Port</div><input name="hls_port" value="{{ settings.hls_port }}"></label>
+          <label><div class="subtle">Default Encoder</div>
             <select name="default_encoder">
               <option value="auto" {% if settings.default_encoder == "auto" %}selected{% endif %}>auto</option>
               <option value="x264" {% if settings.default_encoder == "x264" %}selected{% endif %}>x264</option>
@@ -139,148 +197,226 @@
               <option value="nvenc" {% if settings.default_encoder == "nvenc" %}selected{% endif %}>nvenc</option>
             </select>
           </label>
-
-          <label>
-            <div class="subtle">Default Video Bitrate Kbps</div>
-            <input name="default_video_bitrate" value="{{ settings.default_video_bitrate }}">
-          </label>
-
-          <label>
-            <div class="subtle">Default Audio Bitrate Kbps</div>
-            <input name="default_audio_bitrate" value="{{ settings.default_audio_bitrate }}">
-          </label>
-
-          <label>
-            <div class="subtle">HLS Segment Seconds</div>
-            <input name="default_hls_time" value="{{ settings.default_hls_time }}">
-          </label>
-
-          <label>
-            <div class="subtle">HLS Playlist Size</div>
-            <input name="default_hls_list_size" value="{{ settings.default_hls_list_size }}">
-          </label>
+          <label><div class="subtle">Video Bitrate Kbps</div><input name="default_video_bitrate" value="{{ settings.default_video_bitrate }}"></label>
+          <label><div class="subtle">Audio Bitrate Kbps</div><input name="default_audio_bitrate" value="{{ settings.default_audio_bitrate }}"></label>
+          <label><div class="subtle">HLS Segment Seconds</div><input name="default_hls_time" value="{{ settings.default_hls_time }}"></label>
+          <label><div class="subtle">HLS Playlist Size</div><input name="default_hls_list_size" value="{{ settings.default_hls_list_size }}"></label>
+          </div>
         </div>
 
-                  <label>
-            <div class="subtle">Normalize Embedded Audio</div>
+        <div class="settings-section">
+          <div class="section-title">Audio Processing</div>
+          <p class="subtle">Embedded file audio normalization, loudness target, true peak, and limiter behavior.</p>
+
+          <div class="compact-grid">
+          <label><div class="subtle">Normalize Embedded Audio</div>
             <select name="normalize_embedded_audio">
               <option value="on" {% if settings.normalize_embedded_audio %}selected{% endif %}>enabled</option>
               <option value="off" {% if not settings.normalize_embedded_audio %}selected{% endif %}>disabled</option>
             </select>
           </label>
 
-          <label>
-            <div class="subtle">Target Loudness LUFS</div>
+          <label><div class="subtle">Target Loudness LUFS</div>
             <select name="target_lufs">
-  {% for v in [-24, -23, -20, -18, -16, -14] %}
-  <option value="{{ v }}" {% if settings.target_lufs == v %}selected{% endif %}>{{ v }} LUFS</option>
-  {% endfor %}
-</select>
+              {% for v in [-24, -23, -20, -18, -16, -14] %}
+              <option value="{{ v }}" {% if settings.target_lufs == v %}selected{% endif %}>{{ v }} LUFS</option>
+              {% endfor %}
+            </select>
           </label>
 
-          <label>
-            <div class="subtle">True Peak Max dB</div>
+          <label><div class="subtle">True Peak Max dB</div>
             <select name="true_peak">
-  {% for v in [-3.0, -2.0, -1.5, -1.0] %}
-  <option value="{{ v }}" {% if settings.true_peak == v %}selected{% endif %}>{{ v }} dB</option>
-  {% endfor %}
-</select>
+              {% for v in [-3.0, -2.0, -1.5, -1.0] %}
+              <option value="{{ v }}" {% if settings.true_peak == v %}selected{% endif %}>{{ v }} dB</option>
+              {% endfor %}
+            </select>
           </label>
 
-          <label>
-            <div class="subtle">Loudness Range</div>
+          <label><div class="subtle">Loudness Range</div>
             <select name="loudness_range">
-  {% for v in [7, 9, 11, 13, 15] %}
-  <option value="{{ v }}" {% if settings.loudness_range == v %}selected{% endif %}>{{ v }}</option>
-  {% endfor %}
-</select>
+              {% for v in [7, 9, 11, 13, 15] %}
+              <option value="{{ v }}" {% if settings.loudness_range == v %}selected{% endif %}>{{ v }}</option>
+              {% endfor %}
+            </select>
           </label>
 
-          <label>
-            <div class="subtle">Output Gain dB</div>
-            <input
-  type="range"
-  name="output_gain_db"
-  min="-12"
-  max="12"
-  step="1"
-  value="{{ settings.output_gain_db }}"
-  oninput="document.getElementById('output-gain-display').textContent = this.value + ' dB'"
->
-<div class="subtle">Current: <span id="output-gain-display">{{ settings.output_gain_db }} dB</span></div>
-          </label>
-
-          <label>
-            <div class="subtle">Limiter Limit</div>
+          <label><div class="subtle">Limiter Limit</div>
             <select name="limiter_limit">
-  {% for v in [0.70, 0.80, 0.85, 0.90, 0.95] %}
-  <option value="{{ v }}" {% if settings.limiter_limit == v %}selected{% endif %}>{{ v }}</option>
-  {% endfor %}
-</select>
+              {% for v in [0.70, 0.80, 0.85, 0.90, 0.95] %}
+              <option value="{{ v }}" {% if settings.limiter_limit == v %}selected{% endif %}>{{ v }}</option>
+              {% endfor %}
+            </select>
           </label>
+          </div>
         </div>
 
-        <button class="button" style="margin-top:14px;">Save Settings</button>
+        <div class="settings-section">
+          <div class="section-title">Output Gain</div>
+          <p class="subtle">Final global gain applied after loudness processing.</p>
+          <input type="range" name="output_gain_db" min="-12" max="12" step="1" value="{{ settings.output_gain_db }}" oninput="document.getElementById('output-gain-display').textContent = this.value + ' dB'">
+          <div class="subtle">Current: <strong><span id="output-gain-display">{{ settings.output_gain_db }} dB</span></strong></div>
+        </div>
+
+        <button class="button" style="margin-top:18px;">Save Settings</button>
       </form>
     </div>
   </div>
 
-  <div id="diagnostics" class="panel">
+
+  <div id="network" class="panel">
     <div class="card">
-      <h2>Live Stats</h2>
-      <p class="subtle">Shows resolution, frame rate, codec, audio, and HLS segment health.</p>
-      {% for ch in channels %}
-        <button class="button" onclick="loadStats('{{ ch.id }}', 'stats-{{ ch.id }}')">Load Stats for {{ ch.name }}</button>
-        <pre id="stats-{{ ch.id }}"></pre>
-      {% endfor %}
+      <h2>Network Security</h2>
+      <p class="subtle">Preview firewall policy, allowed subnets, NTP/time settings, and future maintenance-mode behavior. Enforcement is intentionally not active yet.</p>
+
+      {% set np = settings.network_policy %}
+
+      <form method="post" action="/engineer/network/save">
+        <div class="settings-section">
+          <div class="section-title">Firewall Mode</div>
+          <div class="compact-grid">
+            <label>
+              <div class="subtle">Mode</div>
+              <select name="mode">
+                <option value="disabled" {% if np.mode == "disabled" %}selected{% endif %}>Disabled</option>
+                <option value="preview" {% if np.mode == "preview" %}selected{% endif %}>Preview Only</option>
+                <option value="enforced" {% if np.mode == "enforced" %}selected{% endif %}>Enforced - future / do not use yet</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="section-title">Allowed LAN Subnets</div>
+          <label class="check-row">
+            <input type="checkbox" name="auto_allow_lan" {% if np.auto_allow_lan %}checked{% endif %}>
+            Auto-detect local LAN subnets
+          </label>
+
+          <div style="margin-top:12px;">
+            <div class="subtle">Manual allowed subnets, one per line</div>
+            <textarea class="policy-box" name="manual_allowed_subnets">{% for subnet in np.manual_allowed_subnets %}{{ subnet }}
+{% endfor %}</textarea>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="section-title">Inbound Policy</div>
+          <div class="checkbox-grid">
+            <label class="check-row"><input type="checkbox" name="allow_web_ui_from_lan" {% if np.allow_web_ui_from_lan %}checked{% endif %}>Allow Web UI from LAN</label>
+            <label class="check-row"><input type="checkbox" name="allow_hls_from_lan" {% if np.allow_hls_from_lan %}checked{% endif %}>Allow HLS from LAN</label>
+            <label class="check-row"><input type="checkbox" name="allow_vnc_from_lan" {% if np.allow_vnc_from_lan %}checked{% endif %}>Allow VNC/noVNC from LAN</label>
+            <label class="check-row"><input type="checkbox" name="allow_public_access" {% if np.allow_public_access %}checked{% endif %}>Allow public inbound access</label>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="section-title">Outbound Policy</div>
+          <div class="checkbox-grid">
+            <label class="check-row"><input type="checkbox" name="allow_dns" {% if np.allow_dns %}checked{% endif %}>Allow DNS</label>
+            <label class="check-row"><input type="checkbox" name="allow_ntp" {% if np.allow_ntp %}checked{% endif %}>Allow NTP</label>
+            <label class="check-row"><input type="checkbox" name="allow_configured_audio_sources" {% if np.allow_configured_audio_sources %}checked{% endif %}>Allow configured audio sources</label>
+            <label class="check-row"><input type="checkbox" name="allow_configured_outputs" {% if np.allow_configured_outputs %}checked{% endif %}>Allow configured output destinations</label>
+            <label class="check-row"><input type="checkbox" name="allow_multicast_when_configured" {% if np.allow_multicast_when_configured %}checked{% endif %}>Allow multicast only when configured</label>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="section-title">Time / Logging</div>
+          <div class="compact-grid">
+            <label>
+              <div class="subtle">Timezone</div>
+              <input name="timezone" value="{{ np.timezone }}">
+            </label>
+            <label>
+              <div class="subtle">NTP Server</div>
+              <input name="ntp_server" value="{{ np.ntp_server }}">
+            </label>
+          </div>
+          <p class="subtle" style="margin-top:10px;">Future behavior: logs display in local time while internal status files retain UTC timestamps.</p>
+        </div>
+
+        <div class="settings-section">
+          <div class="section-title">Maintenance Mode Planning</div>
+          <div class="checkbox-grid">
+            <label class="check-row"><input type="checkbox" name="maintenance_mode" {% if np.maintenance_mode %}checked{% endif %}>Maintenance mode enabled</label>
+            <label>
+              <div class="subtle">Timeout minutes</div>
+              <input name="maintenance_timeout_minutes" value="{{ np.maintenance_timeout_minutes }}">
+            </label>
+          </div>
+        </div>
+
+        <button class="button" style="margin-top:18px;">Save Network Security Settings</button>
+      </form>
     </div>
+
     <div class="card">
-      <h2>Diagnostics</h2>
-      <p class="subtle">More log and health tools will be added here.</p>
+      <h2>Generated Policy Preview</h2>
+      <pre class="policy-preview">{{ network_policy_preview }}</pre>
     </div>
   </div>
-</div>
 
-<script>
-function showTab(id, btn) {
-  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
-  btn.classList.add('active');
-}
 
-async function testAudio(type, url, targetId) {
-  const box = document.getElementById(targetId);
-  box.textContent = "Testing audio for 5 seconds...";
+  <div id="diagnostics" class="panel">
+    <div class="card">
+      <h2>Diagnostics</h2>
+      <p class="subtle">Diagnostic tools, live stats, logs, and health checks.</p>
 
-  const body = new URLSearchParams();
-  body.set("source_type", type);
-  body.set("url", url);
+      {% for ch in channels if ch.id != "system" %}
+      <div class="mini-card" style="margin-top:12px;">
+        <div class="inline-actions">
+          <strong>{{ ch.name }}</strong>
+          <button class="button" onclick="loadStats('{{ ch.id }}', 'stats-{{ ch.id }}')">Load Stats</button>
+        </div>
+        <pre id="stats-{{ ch.id }}"></pre>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
 
-  try {
-    const res = await fetch("/api/audio/test", {
-      method: "POST",
-      headers: {"Content-Type": "application/x-www-form-urlencoded"},
-      body: body.toString()
+
+  <script>
+    function showTab(id, button) {
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+
+      const panel = document.getElementById(id);
+      if (panel) panel.classList.add('active');
+      if (button) button.classList.add('active');
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get('tab');
+      if (!tab) return;
+
+      const button = [...document.querySelectorAll('.tab')]
+        .find(b => b.getAttribute('onclick') && b.getAttribute('onclick').includes("'" + tab + "'"));
+
+      if (button) showTab(tab, button);
     });
 
-    const data = await res.json();
-    box.textContent = JSON.stringify(data, null, 2);
-  } catch (e) {
-    box.textContent = String(e);
-  }
-}
-async function loadStats(channel, targetId) {
-  const box = document.getElementById(targetId);
-  box.textContent = "Loading stats...";
-  try {
-    const res = await fetch(`/api/channel/${channel}/stats?ts=${Date.now()}`);
-    const data = await res.json();
-    box.textContent = JSON.stringify(data, null, 2);
-  } catch (e) {
-    box.textContent = String(e);
-  }
-}
-</script>
+    async function loadStats(channelId, targetId) {
+      const target = document.getElementById(targetId);
+
+      try {
+        target.textContent = 'Loading...';
+
+        const res = await fetch('/api/channel/' + channelId + '/status?ts=' + Date.now());
+
+        if (!res.ok) {
+          target.textContent = 'Failed to load stats';
+          return;
+        }
+
+        const data = await res.json();
+        target.textContent = JSON.stringify(data, null, 2);
+      }
+      catch (e) {
+        target.textContent = String(e);
+      }
+    }
+  </script>
+
 </body>
 </html>
