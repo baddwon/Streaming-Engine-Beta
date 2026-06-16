@@ -5,11 +5,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHANNEL_DIR="$1"
 INPUT_FILE="$2"
 
+if [ -f "$SCRIPT_DIR/detect_system.sh" ]; then
+  . "$SCRIPT_DIR/detect_system.sh" >/dev/null 2>&1 || true
+fi
+
 if [ -f /tmp/custom-streaming-encoder.env ]; then
   . /tmp/custom-streaming-encoder.env
 fi
 
 VIDEO_ENCODER="${VIDEO_ENCODER:-x264}"
+VAAPI_DEVICE="${VAAPI_DEVICE:-/dev/dri/renderD128}"
 
 if [ -z "$CHANNEL_DIR" ] || [ -z "$INPUT_FILE" ]; then
   echo "Usage: prestage.sh <channel_dir> <input_file>"
@@ -17,6 +22,19 @@ if [ -z "$CHANNEL_DIR" ] || [ -z "$INPUT_FILE" ]; then
 fi
 
 CONFIG="$CHANNEL_DIR/channel.json"
+
+CHANNEL_ENCODER_REQUESTED="$(jq -r '.video_encoder_requested // empty' "$CONFIG" 2>/dev/null)"
+if [ -n "$CHANNEL_ENCODER_REQUESTED" ]; then
+  export VIDEO_ENCODER_REQUESTED="$CHANNEL_ENCODER_REQUESTED"
+fi
+
+if [ -f "$SCRIPT_DIR/detect_system.sh" ]; then
+  . "$SCRIPT_DIR/detect_system.sh" >/dev/null 2>&1 || true
+fi
+
+if [ -f /tmp/custom-streaming-encoder.env ]; then
+  . /tmp/custom-streaming-encoder.env
+fi
 CHANNELS_ROOT="${CHANNEL_ROOT:-$(dirname "$CHANNEL_DIR")}"
 SETTINGS="${STREAMING_ENGINE_CONFIG:-${CHANNELS_ROOT}/system/settings.json}"
 
@@ -113,7 +131,7 @@ if [ "$VIDEO_ENCODER" = "nvenc" ]; then
 
 elif [ "$VIDEO_ENCODER" = "vaapi" ]; then
   ffmpeg -y -hide_banner \
-  -vaapi_device /dev/dri/renderD128 \
+  -vaapi_device "$VAAPI_DEVICE" \
   -i "$INPUT_FILE" \
   -map 0:v:0 \
   -map 0:a:0? \

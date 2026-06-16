@@ -360,7 +360,8 @@ def channel(channel):
         ingest=ingest,
         audio_sources=get_audio_sources(),
         video_sources=cfg.get("video_sources", []),
-        active_audio_source_id=cfg.get("active_audio_source_id", "embedded")
+        active_audio_source_id=cfg.get("active_audio_source_id", "embedded"),
+        video_encoder_requested=cfg.get("video_encoder_requested", "auto")
     )
 
 
@@ -654,6 +655,43 @@ def save_playlist(channel):
 
     except Exception as e:
         print(f"Playlist output restart failed: {e}")
+
+    return redirect(f"/channel/{channel}")
+
+
+
+@app.route("/channel/<channel>/encoder/select", methods=["POST"])
+def select_channel_encoder(channel):
+    cdir = channel_dir(channel)
+    cfg_path = os.path.join(cdir, "channel.json")
+    cfg = load_json(cfg_path, {})
+
+    requested = request.form.get("video_encoder_requested", "auto").strip().lower()
+    valid = ["auto", "intel", "nvidia", "cpu", "vaapi", "nvenc", "x264"]
+
+    if requested not in valid:
+        requested = "auto"
+
+    # Normalize aliases for cleaner config.
+    aliases = {
+        "vaapi": "intel",
+        "nvenc": "nvidia",
+        "x264": "cpu"
+    }
+    requested = aliases.get(requested, requested)
+
+    cfg["video_encoder_requested"] = requested
+    save_json(cfg_path, cfg)
+
+    # Apply immediately by restarting HLS output.
+    try:
+        stop_script = script_path("stop_output.sh") if "script_path" in globals() else "/opt/streaming-engine-beta/scripts/stop_output.sh"
+        start_script = script_path("start_output.sh") if "script_path" in globals() else "/opt/streaming-engine-beta/scripts/start_output.sh"
+
+        subprocess.run([stop_script, cdir, "hls-main"], timeout=10)
+        subprocess.Popen([start_script, cdir, "hls-main"])
+    except Exception as e:
+        print(f"Encoder output restart failed: {e}")
 
     return redirect(f"/channel/{channel}")
 

@@ -75,6 +75,17 @@
         </select>
         <button class="button" style="white-space:nowrap;">Apply</button>
       </form>
+
+      <form method="post" action="/channel/{{ channel }}/encoder/select" style="display:flex;gap:8px;align-items:center;margin-top:8px;max-width:560px;">
+        <div class="subtle" style="white-space:nowrap;">Video Encoder</div>
+        <select name="video_encoder_requested" style="flex:1;">
+          <option value="auto" {% if video_encoder_requested == "auto" %}selected{% endif %}>Auto - prefer onboard, fail over</option>
+          <option value="intel" {% if video_encoder_requested == "intel" %}selected{% endif %}>Intel onboard / VAAPI</option>
+          <option value="nvidia" {% if video_encoder_requested == "nvidia" %}selected{% endif %}>NVIDIA NVENC</option>
+          <option value="cpu" {% if video_encoder_requested == "cpu" %}selected{% endif %}>CPU x264</option>
+        </select>
+        <button class="button" style="white-space:nowrap;">Apply</button>
+      </form>
     </div>
 
     <div style="text-align:right;">

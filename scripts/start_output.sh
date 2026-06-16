@@ -1,13 +1,20 @@
 #!/bin/bash
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 CHANNEL_DIR="$1"
 OUTPUT_ID="$2"
+
+if [ -f "$SCRIPT_DIR/detect_system.sh" ]; then
+  . "$SCRIPT_DIR/detect_system.sh" >/dev/null 2>&1 || true
+fi
 
 if [ -f /tmp/custom-streaming-encoder.env ]; then
   . /tmp/custom-streaming-encoder.env
 fi
 
 VIDEO_ENCODER="${VIDEO_ENCODER:-x264}"
+VAAPI_DEVICE="${VAAPI_DEVICE:-/dev/dri/renderD128}"
 
 CHANNELS_ROOT="${CHANNEL_ROOT:-$(dirname "$CHANNEL_DIR")}"
 SETTINGS="${STREAMING_ENGINE_CONFIG:-${CHANNELS_ROOT}/system/settings.json}"
@@ -20,6 +27,19 @@ AUDIO_FILTER="volume=${OUTPUT_GAIN_DB}dB"
 
 OUTPUT_CONFIG="$CHANNEL_DIR/outputs/${OUTPUT_ID}.json"
 CHANNEL_CONFIG="$CHANNEL_DIR/channel.json"
+
+CHANNEL_ENCODER_REQUESTED="$(jq -r '.video_encoder_requested // empty' "$CHANNEL_CONFIG" 2>/dev/null)"
+if [ -n "$CHANNEL_ENCODER_REQUESTED" ]; then
+  export VIDEO_ENCODER_REQUESTED="$CHANNEL_ENCODER_REQUESTED"
+fi
+
+if [ -f "$SCRIPT_DIR/detect_system.sh" ]; then
+  . "$SCRIPT_DIR/detect_system.sh" >/dev/null 2>&1 || true
+fi
+
+if [ -f /tmp/custom-streaming-encoder.env ]; then
+  . /tmp/custom-streaming-encoder.env
+fi
 
 OUTPUT_DIR=$(jq -r '.hls.output_dir // "${HLS_ROOT:-/var/www/html/hls}/default"' "$OUTPUT_CONFIG")
 OUTPUT_FILE=$(jq -r '.hls.output_file // "stream.m3u8"' "$OUTPUT_CONFIG")
@@ -64,7 +84,7 @@ COMMON_HLS_ARGS=(
 
 if [ "$VIDEO_ENCODER" = "vaapi" ]; then
   VIDEO_ARGS=(
-    -vaapi_device /dev/dri/renderD128
+    -vaapi_device "$VAAPI_DEVICE"
     -vf "format=nv12,hwupload"
     -c:v h264_vaapi
     -b:v 4000k
