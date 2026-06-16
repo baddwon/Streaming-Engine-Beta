@@ -1,5 +1,7 @@
 #!/bin/bash
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 CHANNEL_DIR="$1"
 
 if [ -z "$CHANNEL_DIR" ]; then
@@ -28,10 +30,10 @@ while true; do
 
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Incoming media detected: $FILE" >> "$LOG_FILE"
 
-    /opt/streaming-engine-beta/scripts/prestage.sh "$CHANNEL_DIR" "$FILE"
+    "$SCRIPT_DIR/prestage.sh" "$CHANNEL_DIR" "$FILE"
 
-    /opt/streaming-engine-beta/scripts/generate_human_playlist.sh "$CHANNEL_DIR"
-    /opt/streaming-engine-beta/scripts/generate_playlist.sh "$CHANNEL_DIR"
+    "$SCRIPT_DIR/generate_human_playlist.sh" "$CHANNEL_DIR"
+    "$SCRIPT_DIR/generate_playlist.sh" "$CHANNEL_DIR"
 
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Import complete. Live output NOT restarted. Apply Playlist Changes to put enabled items on air." >> "$LOG_FILE"
 

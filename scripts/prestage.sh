@@ -1,5 +1,7 @@
 #!/bin/bash
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 CHANNEL_DIR="$1"
 INPUT_FILE="$2"
 
@@ -45,9 +47,44 @@ LOG_FILE="$LOG_DIR/prestage-watch.log"
 BASENAME="$(basename "$INPUT_FILE")"
 NAME_NO_EXT="${BASENAME%.*}"
 
-COUNT=$(find "$PRODUCTION" -maxdepth 1 -type f -iname "*.mp4" | wc -l)
-NEXT=$((COUNT + 1))
+LOCK_DIR="$CHANNEL_DIR/runtime/locks"
+CACHE_DIR="$CHANNEL_DIR/runtime/cache"
+mkdir -p "$LOCK_DIR" "$CACHE_DIR"
+LOCK_FILE="$LOCK_DIR/prestage-numbering.lock"
+SEQUENCE_FILE="$CACHE_DIR/prestage_sequence.txt"
+
+exec 9>"$LOCK_FILE"
+flock -x 9
+
+MAX_PREFIX="$(find "$PRODUCTION" -maxdepth 1 -type f -iname "*.mp4" -printf "%f\n" 2>/dev/null \
+  | sed -n 's/^\([0-9][0-9][0-9]\)[_-].*/\1/p' \
+  | sort -n \
+  | tail -1)"
+
+if [ -z "$MAX_PREFIX" ]; then
+  MAX_PREFIX=0
+fi
+
+LAST_USED=0
+if [ -f "$SEQUENCE_FILE" ]; then
+  LAST_USED="$(cat "$SEQUENCE_FILE" 2>/dev/null | tr -cd '0-9')"
+  LAST_USED="${LAST_USED:-0}"
+fi
+
+if [ "$LAST_USED" -lt "$((10#$MAX_PREFIX))" ]; then
+  LAST_USED="$((10#$MAX_PREFIX))"
+fi
+
+NEXT=$((LAST_USED + 1))
 OUTFILE="$PRODUCTION/$(printf "%03d" "$NEXT")_${NAME_NO_EXT}.mp4"
+
+while [ -e "$OUTFILE" ]; do
+  NEXT=$((NEXT + 1))
+  OUTFILE="$PRODUCTION/$(printf "%03d" "$NEXT")_${NAME_NO_EXT}.mp4"
+done
+
+echo "$NEXT" > "$SEQUENCE_FILE"
+flock -u 9
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Processing: $INPUT_FILE" >> "$LOG_FILE"
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Output: $OUTFILE" >> "$LOG_FILE"
@@ -124,7 +161,7 @@ else
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAILED: $INPUT_FILE" >> "$LOG_FILE"
 fi
 
-/opt/streaming-engine-beta/scripts/generate_human_playlist.sh "$CHANNEL_DIR"
-/opt/streaming-engine-beta/scripts/generate_playlist.sh "$CHANNEL_DIR"
+"$SCRIPT_DIR/generate_human_playlist.sh" "$CHANNEL_DIR"
+"$SCRIPT_DIR/generate_playlist.sh" "$CHANNEL_DIR"
 
 exit "$RESULT"

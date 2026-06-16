@@ -15,6 +15,10 @@ from datetime import datetime, timezone
 app = Flask(__name__)
 CHANNELS_BASE = os.environ.get("CHANNEL_ROOT", "/channels")
 SETTINGS_PATH = os.environ.get("STREAMING_ENGINE_CONFIG", os.path.join(CHANNELS_BASE, "system", "settings.json"))
+SCRIPT_DIR = os.environ.get("STREAMING_ENGINE_SCRIPTS", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
+
+def script_path(name):
+    return os.path.join(SCRIPT_DIR, name)
 
 DEFAULT_SETTINGS = {
     "web_port": 5000,
@@ -107,11 +111,11 @@ def channel_dir(channel):
 
 
 def restart_output(cdir, output_id="hls-main"):
-    subprocess.run(["/opt/streaming-engine-beta/scripts/stop_output.sh", cdir, output_id])
+    subprocess.run([script_path("stop_output.sh"), cdir, output_id])
     subprocess.run(["bash", "-c", "rm -f /var/www/html/hls/channel1/*"])
     subprocess.run(["bash", "-c", f"rm -f {cdir}/runtime/pids/*"])
     subprocess.run(["bash", "-c", f"rm -f {cdir}/runtime/status/*"])
-    subprocess.run(["/opt/streaming-engine-beta/scripts/start_output.sh", cdir, output_id])
+    subprocess.run([script_path("start_output.sh"), cdir, output_id])
 
 
 def tail_file(path, lines=40):
@@ -398,12 +402,12 @@ def select_channel_audio(channel):
     # Apply immediately by restarting HLS output.
     try:
         subprocess.run(
-            ["/opt/streaming-engine-beta/scripts/stop_output.sh", cdir, "hls-main"],
+            [script_path("stop_output.sh"), cdir, "hls-main"],
             timeout=10
         )
 
         subprocess.Popen(
-            ["/opt/streaming-engine-beta/scripts/start_output.sh", cdir, "hls-main"]
+            [script_path("start_output.sh"), cdir, "hls-main"]
         )
 
         status_path = os.path.join(cdir, "runtime", "status", "hls-main.json")
@@ -529,7 +533,7 @@ def upload_file(channel):
         # background watcher was not running because the channel was created
         # after container startup.
         subprocess.Popen([
-            "/opt/streaming-engine-beta/scripts/prestage.sh",
+            script_path("prestage.sh"),
             cdir,
             dest
         ])
@@ -574,7 +578,7 @@ def delete_content(channel):
 
     save_json(playlist_path, playlist)
 
-    subprocess.run(["/opt/streaming-engine-beta/scripts/generate_playlist.sh", cdir])
+    subprocess.run([script_path("generate_playlist.sh"), cdir])
     restart_output(cdir, "hls-main")
 
     return redirect(f"/channel/{channel}")
@@ -620,18 +624,18 @@ def save_playlist(channel):
         })
 
     save_json(playlist_path, playlist)
-    subprocess.run(["/opt/streaming-engine-beta/scripts/generate_playlist.sh", cdir])
+    subprocess.run([script_path("generate_playlist.sh"), cdir])
 
     # Apply playlist changes immediately using the same stop/start/wait behavior
     # as the channel audio selector. This keeps the user experience consistent.
     try:
         subprocess.run(
-            ["/opt/streaming-engine-beta/scripts/stop_output.sh", cdir, "hls-main"],
+            [script_path("stop_output.sh"), cdir, "hls-main"],
             timeout=10
         )
 
         subprocess.Popen(
-            ["/opt/streaming-engine-beta/scripts/start_output.sh", cdir, "hls-main"]
+            [script_path("start_output.sh"), cdir, "hls-main"]
         )
 
         status_path = os.path.join(cdir, "runtime", "status", "hls-main.json")
@@ -659,7 +663,7 @@ def output_action(channel, output_id, action):
     cdir = channel_dir(channel)
     script = "start_output.sh" if action == "start" else "stop_output.sh"
 
-    subprocess.Popen(["/opt/streaming-engine-beta/scripts/" + script, cdir, output_id])
+    subprocess.Popen([script_path(script), cdir, output_id])
 
     return redirect(f"/channel/{channel}")
 
@@ -680,7 +684,7 @@ def flush_channel(channel):
             output_id = output.get("output_id")
 
             if output_id:
-                subprocess.run(["/opt/streaming-engine-beta/scripts/stop_output.sh", cdir, output_id])
+                subprocess.run([script_path("stop_output.sh"), cdir, output_id])
 
     folders = [
         "incoming", "production", "processed", "failed",
@@ -759,7 +763,7 @@ def add_channel():
 
     human_playlist = cdir / "playlists/human_playlist.json"
     if not human_playlist.exists():
-        human_playlist.write_text("[]`n")
+        human_playlist.write_text("[]\n")
 
     ffmpeg_playlist = cdir / "playlists/ffmpeg_playlist.txt"
     if not ffmpeg_playlist.exists():
@@ -839,7 +843,7 @@ def delete_channel(channel):
     if cdir.exists() and cdir.is_dir():
         try:
             subprocess.run(
-                ["/opt/streaming-engine-beta/scripts/stop_output.sh", str(cdir), "hls-main"],
+                [script_path("stop_output.sh"), str(cdir), "hls-main"],
                 timeout=10
             )
         except Exception as e:
