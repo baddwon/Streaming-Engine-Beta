@@ -9,7 +9,8 @@ fi
 
 VIDEO_ENCODER="${VIDEO_ENCODER:-x264}"
 
-SETTINGS="${STREAMING_ENGINE_CONFIG:-${CHANNEL_ROOT:-/channels}/system/settings.json}"
+CHANNELS_ROOT="${CHANNEL_ROOT:-$(dirname "$CHANNEL_DIR")}"
+SETTINGS="${STREAMING_ENGINE_CONFIG:-${CHANNELS_ROOT}/system/settings.json}"
 OUTPUT_GAIN_DB=$(jq -r '.output_gain_db // 0' "$SETTINGS" 2>/dev/null)
 LIMITER_LIMIT=$(jq -r '.limiter_limit // 0.90' "$SETTINGS" 2>/dev/null)
 
@@ -44,8 +45,8 @@ rm -f "$OUTPUT_DIR"/*.ts "$OUTPUT_DIR"/*.m3u8 "$OUTPUT_DIR"/*.tmp
 
 AUDIO_ID=$(jq -r '.active_audio_source_id // "embedded"' "$CHANNEL_CONFIG" 2>/dev/null)
 
-AUDIO_TYPE=$(jq -r --arg id "$AUDIO_ID" '.audio_sources[]? | select(.id == $id) | .type' "$CHANNEL_CONFIG" | head -1)
-AUDIO_URL=$(jq -r --arg id "$AUDIO_ID" '.audio_sources[]? | select(.id == $id) | .url' "$CHANNEL_CONFIG" | head -1)
+AUDIO_TYPE=$(jq -r --arg id "$AUDIO_ID" '.audio_sources[]? | select(.id == $id) | .type' "$SETTINGS" | head -1)
+AUDIO_URL=$(jq -r --arg id "$AUDIO_ID" '.audio_sources[]? | select(.id == $id) | .url' "$SETTINGS" | head -1)
 
 AUDIO_ID="${AUDIO_ID:-embedded}"
 AUDIO_TYPE="${AUDIO_TYPE:-embedded}"

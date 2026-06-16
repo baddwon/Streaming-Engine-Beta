@@ -17,7 +17,8 @@ if [ -z "$CHANNEL_DIR" ] || [ -z "$INPUT_FILE" ]; then
 fi
 
 CONFIG="$CHANNEL_DIR/channel.json"
-SETTINGS="${STREAMING_ENGINE_CONFIG:-${CHANNEL_ROOT:-/channels}/system/settings.json}"
+CHANNELS_ROOT="${CHANNEL_ROOT:-$(dirname "$CHANNEL_DIR")}"
+SETTINGS="${STREAMING_ENGINE_CONFIG:-${CHANNELS_ROOT}/system/settings.json}"
 
 NORMALIZE_AUDIO=$(jq -r '.normalize_embedded_audio // true' "$SETTINGS" 2>/dev/null)
 TARGET_LUFS=$(jq -r '.target_lufs // -16' "$SETTINGS" 2>/dev/null)

@@ -4,6 +4,8 @@ CHANNEL_DIR="$1"
 OUTPUT_ID="${2:-hls-main}"
 
 CHANNEL_CONFIG="$CHANNEL_DIR/channel.json"
+CHANNELS_ROOT="${CHANNEL_ROOT:-$(dirname "$CHANNEL_DIR")}"
+SETTINGS="${STREAMING_ENGINE_CONFIG:-${CHANNELS_ROOT}/system/settings.json}"
 HUMAN_PLAYLIST="$CHANNEL_DIR/$(jq -r '.files.human_playlist // "playlists/human_playlist.json"' "$CHANNEL_CONFIG")"
 
 CACHE_DIR="$CHANNEL_DIR/runtime/cache/${OUTPUT_ID}"
@@ -55,8 +57,8 @@ for ITEM in "${ITEMS[@]}"; do
 
   SEGMENT="$CACHE_DIR/segment_$(printf "%04d" "$INDEX").mp4"
 
-  AUDIO_TYPE=$(jq -r --arg id "$AUDIO_ID" '.audio_sources[]? | select(.id == $id) | .type' "$CHANNEL_CONFIG" | head -1)
-  AUDIO_URL=$(jq -r --arg id "$AUDIO_ID" '.audio_sources[]? | select(.id == $id) | .url' "$CHANNEL_CONFIG" | head -1)
+  AUDIO_TYPE=$(jq -r --arg id "$AUDIO_ID" '.audio_sources[]? | select(.id == $id) | .type' "$SETTINGS" | head -1)
+  AUDIO_URL=$(jq -r --arg id "$AUDIO_ID" '.audio_sources[]? | select(.id == $id) | .url' "$SETTINGS" | head -1)
 
   AUDIO_TYPE="${AUDIO_TYPE:-embedded}"
 
