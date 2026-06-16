@@ -67,7 +67,7 @@ echo "[INSTALL] Writing environment file..."
 sudo tee "${CONFIG_DIR}/env" >/dev/null <<ENV
 APP_NAME=${APP_NAME}
 CHANNEL_ROOT=${CHANNEL_DIR}
-STREAMING_ENGINE_CONFIG=${CONFIG_DIR}/settings.json
+STREAMING_ENGINE_CONFIG=${CHANNEL_DIR}/system/settings.json
 HLS_ROOT=${HLS_DIR}
 WEB_PORT=${WEB_PORT}
 HLS_PUBLIC_PORT=${HLS_PUBLIC_PORT}
