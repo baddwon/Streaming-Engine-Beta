@@ -7,7 +7,7 @@ echo '"timestamp": "'"$(date -Is)"'",'
 echo '"cpu": {'
 echo '"model": "'"$(lscpu | awk -F: '/Model name/ {gsub(/^[ \t]+/,"",$2); print $2; exit}' | sed 's/"/\\"/g')"'",'
 echo '"load": "'"$(uptime | sed 's/.*load average: //')"'",'
-echo '"percent": '"$(awk '{u=$2+$4; t=$2+$4+$5; if (t>0) printf "%.1f", (u/t)*100; else print 0}' /proc/stat)"
+echo '"percent": '"$(awk 'NR==1 {u=$2+$4; t=$2+$4+$5; if (t>0) printf "%.1f", (u/t)*100; else print 0}' /proc/stat)"
 echo "},"
 
 echo '"memory": {'
