@@ -98,6 +98,14 @@ RuntimeDirectoryMode=0755
 WantedBy=multi-user.target
 SERVICE
 
+
+echo "[INSTALL] Installing public HLS ACL helper..."
+sudo chmod +x "${APP_DIR}/scripts/apply_public_hls_acl.sh" 2>/dev/null || true
+sudo tee /etc/sudoers.d/${APP_NAME}-hls-acl >/dev/null <<SUDOERS
+${APP_USER} ALL=(root) NOPASSWD: ${APP_DIR}/scripts/apply_public_hls_acl.sh
+SUDOERS
+sudo chmod 440 /etc/sudoers.d/${APP_NAME}-hls-acl
+
 echo "[INSTALL] Configuring nginx HLS site..."
 sudo tee /etc/nginx/sites-available/${APP_NAME}-hls >/dev/null <<NGINX
 server {

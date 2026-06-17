@@ -1333,6 +1333,59 @@ def api_system_channel_health():
     return jsonify({"channels": out})
 
 
+
+@app.route("/engineer/public-hls", methods=["GET", "POST"])
+def engineer_public_hls():
+    import ipaddress, subprocess
+
+    settings = load_settings()
+    message = ""
+
+    if request.method == "POST":
+        public_hls_enabled = request.form.get("public_hls_enabled") == "on"
+        public_hls_base_url = request.form.get("public_hls_base_url", "").strip()
+        cidr_text = request.form.get("public_hls_allowed_cidrs", "").strip()
+
+        cidrs = []
+        errors = []
+
+        for raw in cidr_text.replace(",", "\n").splitlines():
+            item = raw.strip()
+            if not item:
+                continue
+            try:
+                cidrs.append(str(ipaddress.ip_network(item, strict=False)))
+            except Exception:
+                errors.append(item)
+
+        if errors:
+            message = "Invalid CIDR(s): " + ", ".join(errors)
+        else:
+            settings["public_hls_enabled"] = public_hls_enabled
+            settings["public_hls_base_url"] = public_hls_base_url
+            settings["public_hls_allowed_cidrs"] = cidrs
+            save_settings(settings)
+            message = "Saved public HLS settings."
+
+            if request.form.get("apply_nginx") == "on":
+                try:
+                    helper = "/opt/streaming-engine-beta/scripts/apply_public_hls_acl.sh"
+                    r = subprocess.run(["sudo", helper], capture_output=True, text=True, timeout=15)
+                    if r.returncode == 0:
+                        message += " Applied nginx ACL."
+                    else:
+                        message += " Nginx apply failed: " + (r.stderr or r.stdout)
+                except Exception as e:
+                    message += " Nginx apply failed: " + str(e)
+
+    return render_template(
+        "public_hls.html",
+        settings=settings,
+        message=message,
+        cidrs="\n".join(settings.get("public_hls_allowed_cidrs", []))
+    )
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
 
