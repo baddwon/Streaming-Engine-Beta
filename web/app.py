@@ -1254,6 +1254,85 @@ def api_channel_stats(channel):
 
     return jsonify(stats)
 
+
+@app.route("/system")
+def system_page():
+    return render_template("system.html")
+
+@app.route("/api/system/inventory")
+def api_system_inventory():
+    import subprocess, json
+    script = "/opt/streaming-engine-beta/scripts/system_snapshot.sh"
+    if not os.path.exists(script):
+        script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts", "system_snapshot.sh")
+    try:
+        r = subprocess.run([script], capture_output=True, text=True, timeout=10)
+        return jsonify(json.loads(r.stdout))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/system/events")
+def api_system_events():
+    root = os.environ.get("CHANNEL_ROOT", "/var/lib/streaming-engine-beta/channels")
+    events = []
+    try:
+        for name in sorted(os.listdir(root)):
+            if name == "system":
+                continue
+            p = os.path.join(root, name, "runtime", "logs", "events.log")
+            if os.path.exists(p):
+                with open(p, "r", errors="ignore") as f:
+                    for line in f.readlines()[-50:]:
+                        events.append({"channel": name, "line": line.rstrip()})
+    except Exception as e:
+        return jsonify({"error": str(e), "events": events})
+    return jsonify({"events": events[-100:]})
+
+@app.route("/api/system/channel-health")
+def api_system_channel_health():
+    import time, re
+    root = os.environ.get("CHANNEL_ROOT", "/var/lib/streaming-engine-beta/channels")
+    hls_root = os.environ.get("HLS_ROOT", "/var/www/html/hls")
+    out = []
+    now = time.time()
+    try:
+        for name in sorted(os.listdir(root)):
+            if name == "system":
+                continue
+            cdir = os.path.join(root, name)
+            if not os.path.isdir(cdir):
+                continue
+            status_path = os.path.join(cdir, "runtime", "status", "hls-main.json")
+            log_path = os.path.join(cdir, "runtime", "logs", "hls-main.log")
+            stream_path = os.path.join(hls_root, "Ch_" + name, "stream.m3u8")
+            status = load_json(status_path, {})
+            age = None
+            if os.path.exists(stream_path):
+                age = int(now - os.path.getmtime(stream_path))
+            speed = None
+            if os.path.exists(log_path):
+                try:
+                    data = open(log_path, "r", errors="ignore").read()[-20000:]
+                    m = re.findall(r"speed=\s*([0-9.]+)x", data)
+                    if m:
+                        speed = m[-1]
+                except Exception:
+                    pass
+            out.append({
+                "channel": name,
+                "status": status.get("status", "unknown"),
+                "encoder": status.get("video_encoder", ""),
+                "audio_source_id": status.get("audio_source_id", ""),
+                "audio_source_type": status.get("audio_source_type", ""),
+                "last_segment_age_seconds": age,
+                "ffmpeg_speed": speed,
+                "healthy": bool(age is not None and age < 90)
+            })
+    except Exception as e:
+        return jsonify({"error": str(e), "channels": out})
+    return jsonify({"channels": out})
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
 

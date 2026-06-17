@@ -66,6 +66,13 @@ LOG_FILE="$LOG_DIR/prestage-watch.log"
 BASENAME="$(basename "$INPUT_FILE")"
 NAME_NO_EXT="${BASENAME%.*}"
 
+if ! ffprobe -v error -select_streams v:0 -show_entries stream=codec_type -of csv=p=0 "$INPUT_FILE" >/dev/null 2>&1; then
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: Media validation failed: $INPUT_FILE" >> "$LOG_FILE"
+  echo "[$(date '+%F %T')] [ERROR] Media validation failed: $BASENAME" >> "$LOG_DIR/events.log"
+  mv "$INPUT_FILE" "$FAILED/$BASENAME"
+  exit 1
+fi
+
 LOCK_DIR="$CHANNEL_DIR/runtime/locks"
 CACHE_DIR="$CHANNEL_DIR/runtime/cache"
 mkdir -p "$LOCK_DIR" "$CACHE_DIR"

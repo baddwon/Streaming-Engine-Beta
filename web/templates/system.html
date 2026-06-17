@@ -1,0 +1,70 @@
+<!doctype html>
+<html>
+<head>
+  <title>System Status</title>
+  <style>
+    body{font-family:Arial,sans-serif;background:#111;color:#eee;margin:24px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+    .card{background:#1b1b1b;border:1px solid #333;border-radius:10px;padding:16px}
+    .ok{color:#72e572}.warn{color:#ffd166}.bad{color:#ff6b6b}
+    pre{white-space:pre-wrap;font-size:12px;background:#080808;padding:10px;border-radius:8px;max-height:360px;overflow:auto}
+    table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid #333;padding:6px;text-align:left}
+  </style>
+</head>
+<body>
+  <h1>System Status</h1>
+  <p><a style="color:#9cf" href="/">Home</a></p>
+
+  <div class="grid">
+    <div class="card"><h2>CPU</h2><div id="cpu">Loading...</div></div>
+    <div class="card"><h2>Memory</h2><div id="mem">Loading...</div></div>
+    <div class="card"><h2>Disk</h2><div id="disk">Loading...</div></div>
+    <div class="card"><h2>Services</h2><div id="services">Loading...</div></div>
+  </div>
+
+  <h2>GPUs</h2>
+  <div id="gpus" class="grid"></div>
+
+  <h2>Channel Health</h2>
+  <div class="card"><table id="channels"></table></div>
+
+  <h2>Recent Events</h2>
+  <pre id="events">Loading...</pre>
+
+<script>
+async function refresh(){
+  let inv = await (await fetch('/api/system/inventory?ts='+Date.now())).json();
+  document.getElementById('cpu').innerHTML = `${inv.cpu?.model || ''}<br>Usage: ${inv.cpu?.percent || '?'}%<br>Load: ${inv.cpu?.load || ''}`;
+  document.getElementById('mem').innerHTML = `Used: ${inv.memory?.used_mb} MB / ${inv.memory?.total_mb} MB<br>${inv.memory?.percent}%`;
+  document.getElementById('disk').innerHTML = `Root: ${inv.disk?.root_used} / ${inv.disk?.root_size}<br>${inv.disk?.root_percent}%`;
+  document.getElementById('services').innerHTML = `Engine: ${inv.services?.streaming_engine}<br>Watchdog: ${inv.services?.watchdog_timer}<br>Nginx: ${inv.services?.nginx}`;
+
+  let g = document.getElementById('gpus'); g.innerHTML='';
+  (inv.gpus || []).forEach(x=>{
+    let d=document.createElement('div'); d.className='card';
+    d.innerHTML=`<h3>${x.name || x.vendor}</h3>
+      Vendor: ${x.vendor}<br>
+      GPU: ${x.gpu_percent ?? '?'}%<br>
+      Encoder: ${x.encoder_percent ?? '?'}%<br>
+      Decoder: ${x.decoder_percent ?? '?'}%<br>
+      Mem: ${x.memory_used_mb ?? '?'} / ${x.memory_total_mb ?? '?'} MB<br>
+      Temp: ${x.temperature_c ?? '?'} C<br>
+      NVENC: ${x.nvenc ? 'yes':'no'} VAAPI: ${x.vaapi ? 'yes':'no'}`;
+    g.appendChild(d);
+  });
+
+  let health = await (await fetch('/api/system/channel-health?ts='+Date.now())).json();
+  let table = '<tr><th>Channel</th><th>Status</th><th>Encoder</th><th>Audio</th><th>Segment Age</th><th>Speed</th><th>Health</th></tr>';
+  (health.channels || []).forEach(c=>{
+    table += `<tr><td>${c.channel}</td><td>${c.status}</td><td>${c.encoder}</td><td>${c.audio_source_id}/${c.audio_source_type}</td><td>${c.last_segment_age_seconds}s</td><td>${c.ffmpeg_speed || ''}x</td><td class="${c.healthy?'ok':'bad'}">${c.healthy?'OK':'STALE'}</td></tr>`;
+  });
+  document.getElementById('channels').innerHTML = table;
+
+  let ev = await (await fetch('/api/system/events?ts='+Date.now())).json();
+  document.getElementById('events').textContent = (ev.events || []).map(e=>`Ch ${e.channel}: ${e.line}`).join('\n');
+}
+refresh();
+setInterval(refresh,5000);
+</script>
+</body>
+</html>

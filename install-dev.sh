@@ -126,9 +126,43 @@ sudo ln -sf /etc/nginx/sites-available/${APP_NAME}-hls /etc/nginx/sites-enabled/
 sudo nginx -t
 sudo systemctl reload nginx || sudo systemctl restart nginx
 
+
+echo "[INSTALL] Installing output watchdog..."
+sudo tee /etc/systemd/system/streaming-engine-watchdog.service >/dev/null <<WATCHDOGSERVICE
+[Unit]
+Description=Custom Streaming Engine Output Watchdog
+After=${APP_NAME}.service
+Wants=${APP_NAME}.service
+
+[Service]
+Type=oneshot
+User=${APP_USER}
+Group=${APP_GROUP}
+EnvironmentFile=${CONFIG_DIR}/env
+ExecStart=${APP_DIR}/scripts/watchdog_outputs.sh
+WATCHDOGSERVICE
+
+sudo tee /etc/systemd/system/streaming-engine-watchdog.timer >/dev/null <<WATCHDOGTIMER
+[Unit]
+Description=Run Custom Streaming Engine Output Watchdog every minute
+
+[Timer]
+OnBootSec=90
+OnUnitActiveSec=60
+AccuracySec=10
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+WATCHDOGTIMER
+
+echo "[INSTALL] Disabling sleep/hibernate targets for appliance mode..."
+sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target || true
+
 echo "[INSTALL] Enabling service..."
 sudo systemctl daemon-reload
 sudo systemctl enable ${APP_NAME}
+sudo systemctl enable --now streaming-engine-watchdog.timer
 sudo systemctl restart ${APP_NAME}
 
 IP_ADDR="$(hostname -I | awk '{print $1}')"
