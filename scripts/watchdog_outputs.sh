@@ -163,7 +163,14 @@ for channel_dir in "$CHANNEL_ROOT"/*; do
 
     if grep -iE "Input/output error|Will reconnect|Error during demuxing|Invalid data" "$ffmpeg_log" | tail -5 >/dev/null 2>&1; then
       recent="$(grep -iE "Input/output error|Will reconnect|Error during demuxing|Invalid data" "$ffmpeg_log" | tail -1 || true)"
-      [ -n "$recent" ] && log_event "$channel_dir" "WARN" "Recent FFmpeg warning: $recent"
+      warning_hash="$(printf "%s" "$recent" | sha1sum | awk '{print $1}')"
+      warning_state="$channel_dir/runtime/status/last-ffmpeg-warning.hash"
+      last_hash=""
+      [ -f "$warning_state" ] && last_hash="$(cat "$warning_state" 2>/dev/null || true)"
+      if [ -n "$recent" ] && [ "$warning_hash" != "$last_hash" ]; then
+        log_event "$channel_dir" "WARN" "Recent FFmpeg warning: $recent"
+        echo "$warning_hash" > "$warning_state"
+      fi
     fi
   fi
 done
