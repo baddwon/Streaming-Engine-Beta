@@ -55,42 +55,133 @@
     <button class="tab" onclick="showTab('outputs', this)">Outputs</button>
     <button class="tab" onclick="showTab('settings', this)">Settings</button>
     <button class="tab" onclick="showTab('network', this)">Network Security</button>
+        <a class="tab" href="/engineer/public-hls" style="text-decoration:none;">Public HLS</a>
     <button class="tab" onclick="showTab('diagnostics', this)">Diagnostics</button>
   </div>
 
-  <div id="system" class="panel active">
-    <div class="card">
-      <h2>System</h2>
-      <p class="subtle">Current machine and encoder detection. More CPU, memory, GPU, disk, and host identifiers will be added here.</p>
+  
+<div id="system" class="tab-content active">
+  <div class="panel">
+    <h2>System</h2>
+    <p class="subtle">Live hardware, encoder, service, and channel health.</p>
 
-      <div class="compact-grid">
-        <div class="mini-card">
-          <div class="subtle">Video Encoder</div>
-          <strong>{{ system_status.video_encoder or "unknown" }}</strong>
-        </div>
-        <div class="mini-card">
-          <div class="subtle">NVIDIA</div>
-          <strong>{{ system_status.nvidia or "not_available" }}</strong>
-        </div>
-        <div class="mini-card">
-          <div class="subtle">VAAPI Intel/AMD</div>
-          <strong>{{ system_status.vaapi or "not_available" }}</strong>
-        </div>
-        <div class="mini-card">
-          <div class="subtle">Audio Devices</div>
-          <strong>{{ system_status.audio_devices or "not_available" }}</strong>
-        </div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
+      <div class="card">
+        <div class="subtle">CPU</div>
+        <b id="sys-cpu-model">Loading...</b>
+        <div id="sys-cpu-usage"></div>
+        <div class="subtle" id="sys-load"></div>
       </div>
 
-      <div class="box">
-        <div class="subtle">Detection reason</div>
-        {{ system_status.reason or "unknown" }}
+      <div class="card">
+        <div class="subtle">Memory</div>
+        <b id="sys-memory">Loading...</b>
+      </div>
+
+      <div class="card">
+        <div class="subtle">Disk</div>
+        <b id="sys-disk">Loading...</b>
+      </div>
+
+      <div class="card">
+        <div class="subtle">Services</div>
+        <b id="sys-services">Loading...</b>
       </div>
     </div>
+
+    <h3 style="margin-top:18px;">GPUs</h3>
+    <div id="sys-gpus" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;"></div>
+
+    <h3 style="margin-top:18px;">Channel Health</h3>
+    <div class="card">
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr>
+            <th style="text-align:left;">Channel</th>
+            <th style="text-align:left;">Status</th>
+            <th style="text-align:left;">Encoder</th>
+            <th style="text-align:left;">Audio</th>
+            <th style="text-align:left;">Segment Age</th>
+            <th style="text-align:left;">Speed</th>
+            <th style="text-align:left;">Health</th>
+          </tr>
+        </thead>
+        <tbody id="sys-channel-health">
+          <tr><td colspan="7">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="margin-top:18px;">Recent Events</h3>
+    <pre id="sys-events" style="white-space:pre-wrap;max-height:260px;overflow:auto;background:#050711;border:1px solid #27324a;border-radius:10px;padding:12px;">Loading...</pre>
   </div>
+</div>
 
+<script>
+async function refreshEngineerSystem(){
+  try {
+    const inv = await (await fetch('/api/system/inventory?ts=' + Date.now())).json();
 
-  <div id="audio" class="panel">
+    document.getElementById('sys-cpu-model').textContent = inv.cpu?.model || 'Unknown';
+    document.getElementById('sys-cpu-usage').textContent = 'Usage: ' + (inv.cpu?.percent ?? '?') + '%';
+    document.getElementById('sys-load').textContent = 'Load: ' + (inv.cpu?.load || '');
+
+    document.getElementById('sys-memory').textContent =
+      `${inv.memory?.used_mb ?? '?'} MB / ${inv.memory?.total_mb ?? '?'} MB (${inv.memory?.percent ?? '?'}%)`;
+
+    document.getElementById('sys-disk').textContent =
+      `${inv.disk?.root_used ?? '?'} / ${inv.disk?.root_size ?? '?'} (${inv.disk?.root_percent ?? '?'}%)`;
+
+    document.getElementById('sys-services').innerHTML =
+      `Engine: ${inv.services?.streaming_engine || '?'}<br>` +
+      `Watchdog: ${inv.services?.watchdog_timer || '?'}<br>` +
+      `Nginx: ${inv.services?.nginx || '?'}`;
+
+    const gpuBox = document.getElementById('sys-gpus');
+    gpuBox.innerHTML = '';
+    (inv.gpus || []).forEach(g => {
+      const div = document.createElement('div');
+      div.className = 'card';
+      div.innerHTML =
+        `<div class="subtle">${g.vendor || 'GPU'}</div>` +
+        `<b>${g.name || 'Unknown GPU'}</b><br>` +
+        `GPU: ${g.gpu_percent ?? '?'}%<br>` +
+        `Encoder: ${g.encoder_percent ?? '?'}%<br>` +
+        `Decoder: ${g.decoder_percent ?? '?'}%<br>` +
+        `Memory: ${g.memory_used_mb ?? '?'} / ${g.memory_total_mb ?? '?'} MB<br>` +
+        `Temp: ${g.temperature_c ?? '?'} C<br>` +
+        `NVENC: ${g.nvenc ? 'yes' : 'no'} &nbsp; VAAPI: ${g.vaapi ? 'yes' : 'no'}`;
+      gpuBox.appendChild(div);
+    });
+
+    const health = await (await fetch('/api/system/channel-health?ts=' + Date.now())).json();
+    const tbody = document.getElementById('sys-channel-health');
+    tbody.innerHTML = '';
+    (health.channels || []).forEach(c => {
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        `<td>${c.channel}</td>` +
+        `<td>${c.status}</td>` +
+        `<td>${c.encoder}</td>` +
+        `<td>${c.audio_source_id}/${c.audio_source_type}</td>` +
+        `<td>${c.last_segment_age_seconds}s</td>` +
+        `<td>${c.ffmpeg_speed || ''}x</td>` +
+        `<td style="color:${c.healthy ? '#72e572' : '#ff6b6b'}">${c.healthy ? 'OK' : 'STALE'}</td>`;
+      tbody.appendChild(tr);
+    });
+
+    const ev = await (await fetch('/api/system/events?ts=' + Date.now())).json();
+    document.getElementById('sys-events').textContent =
+      (ev.events || []).map(e => `Ch ${e.channel}: ${e.line}`).join('\n') || 'No recent events.';
+  } catch (e) {
+    console.error(e);
+  }
+}
+refreshEngineerSystem();
+setInterval(refreshEngineerSystem, 5000);
+</script>
+
+<div id="audio" class="panel">
     <div class="card">
       <h2>Global Audio Sources</h2>
       <p class="subtle">Define reusable audio sources once, then select them from any channel.</p>
@@ -417,6 +508,7 @@
       }
     }
   </script>
+
 
 </body>
 </html>
