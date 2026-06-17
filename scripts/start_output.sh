@@ -72,6 +72,21 @@ AUDIO_ID="${AUDIO_ID:-embedded}"
 AUDIO_TYPE="${AUDIO_TYPE:-embedded}"
 AUDIO_URL="${AUDIO_URL:-}"
 
+AUDIO_EFFECTIVE_ID="$AUDIO_ID"
+AUDIO_EFFECTIVE_TYPE="$AUDIO_TYPE"
+AUDIO_EFFECTIVE_URL="$AUDIO_URL"
+AUDIO_FALLBACK_FILE="$STATUS_DIR/audio-fallback.json"
+
+if [ -f "$AUDIO_FALLBACK_FILE" ]; then
+  FALLBACK_ACTIVE="$(jq -r '.active // false' "$AUDIO_FALLBACK_FILE" 2>/dev/null || echo false)"
+  if [ "$FALLBACK_ACTIVE" = "true" ]; then
+    AUDIO_EFFECTIVE_ID="silent"
+    AUDIO_EFFECTIVE_TYPE="silent"
+    AUDIO_EFFECTIVE_URL=""
+    echo "[$(date '+%F %T')] [WARN] Audio fallback active; using silence instead of $AUDIO_ID" >> "$LOG_DIR/events.log"
+  fi
+fi
+
 COMMON_HLS_ARGS=(
   -f hls
   -hls_time "$HLS_TIME"
@@ -124,17 +139,17 @@ else
   )
 fi
 
-if [ "$AUDIO_TYPE" = "web" ] && [ -n "$AUDIO_URL" ]; then
+if [ "$AUDIO_EFFECTIVE_TYPE" = "web" ] && [ -n "$AUDIO_EFFECTIVE_URL" ]; then
   ffmpeg -hide_banner -y \
     -re -stream_loop -1 -f concat -safe 0 -i "$PLAYLIST" \
-    -thread_queue_size 1024 -reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1 -reconnect_on_network_error 1 -reconnect_delay_max 10 -user_agent "CustomStreamingEngine/0.3" -i "$AUDIO_URL" \
+    -thread_queue_size 1024 -reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1 -reconnect_on_network_error 1 -reconnect_delay_max 10 -rw_timeout 15000000 -timeout 15000000 -user_agent "CustomStreamingEngine/0.3" -i "$AUDIO_EFFECTIVE_URL" \
     -map 0:v:0 \
     -map 1:a:0 \
     "${VIDEO_ARGS[@]}" \
     -af "$AUDIO_FILTER" \
     -c:a aac -b:a 128k -ar 48000 -ac 2 \
     "${COMMON_HLS_ARGS[@]}" >> "$LOG_FILE" 2>&1 &
-elif [ "$AUDIO_TYPE" = "silent" ]; then
+elif [ "$AUDIO_EFFECTIVE_TYPE" = "silent" ]; then
   ffmpeg -hide_banner -y \
     -re -stream_loop -1 -f concat -safe 0 -i "$PLAYLIST" \
     -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=48000 \
@@ -171,7 +186,10 @@ cat > "$STATUS_FILE" <<JSON
   "output_gain_db": "$OUTPUT_GAIN_DB",
   "limiter_limit": "$LIMITER_LIMIT",
   "audio_source_id": "$AUDIO_ID",
+  "audio_effective_id": "$AUDIO_EFFECTIVE_ID",
   "audio_source_type": "$AUDIO_TYPE",
-  "audio_source_url": "$AUDIO_URL"
+  "audio_effective_type": "$AUDIO_EFFECTIVE_TYPE",
+  "audio_source_url": "$AUDIO_URL",
+  "audio_fallback_active": "$(jq -r '.active // false' "$AUDIO_FALLBACK_FILE" 2>/dev/null || echo false)"
 }
 JSON
