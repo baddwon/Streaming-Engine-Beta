@@ -1386,7 +1386,97 @@ def engineer_public_hls():
     )
 
 
+
+def pid_is_alive(pid):
+    try:
+        pid = int(pid)
+        if pid <= 0:
+            return False
+        os.kill(pid, 0)
+        return True
+    except Exception:
+        return False
+
+
+def log_startup_event(message):
+    try:
+        root = os.environ.get("CHANNEL_ROOT", "/var/lib/streaming-engine-beta/channels")
+        system_log_dir = os.path.join(root, "system", "logs")
+        os.makedirs(system_log_dir, exist_ok=True)
+        with open(os.path.join(system_log_dir, "startup.log"), "a") as f:
+            f.write(f"[{datetime.datetime.now().strftime('%F %T')}] {message}\n")
+    except Exception as e:
+        print(f"startup log failed: {e}")
+
+
+def restore_running_outputs_on_startup():
+    root = os.environ.get("CHANNEL_ROOT", "/var/lib/streaming-engine-beta/channels")
+    log_startup_event("Engine startup restore scan beginning")
+
+    if not os.path.isdir(root):
+        log_startup_event(f"Channel root missing: {root}")
+        return
+
+    for name in sorted(os.listdir(root)):
+        if name == "system":
+            continue
+
+        cdir = os.path.join(root, name)
+        if not os.path.isdir(cdir):
+            continue
+
+        channel_json = os.path.join(cdir, "channel.json")
+        if not os.path.exists(channel_json):
+            continue
+
+        status_dir = os.path.join(cdir, "runtime", "status")
+        if not os.path.isdir(status_dir):
+            continue
+
+        for status_name in sorted(os.listdir(status_dir)):
+            if not status_name.endswith(".json"):
+                continue
+
+            output_id = status_name[:-5]
+            status_path = os.path.join(status_dir, status_name)
+            status = load_json(status_path, {})
+
+            if status.get("status") != "running":
+                log_startup_event(f"Channel {name} output {output_id}: previous state not running; skipping")
+                continue
+
+            pid = status.get("pid")
+            if pid_is_alive(pid):
+                log_startup_event(f"Channel {name} output {output_id}: PID {pid} already alive; leaving running")
+                continue
+
+            output_cfg = os.path.join(cdir, "outputs", f"{output_id}.json")
+            playlist = os.path.join(cdir, "playlists", "ffmpeg_playlist.txt")
+
+            if not os.path.exists(output_cfg):
+                log_startup_event(f"Channel {name} output {output_id}: output config missing; not restoring")
+                continue
+
+            if not os.path.exists(playlist):
+                log_startup_event(f"Channel {name} output {output_id}: playlist missing; not restoring")
+                continue
+
+            try:
+                log_startup_event(f"Channel {name} output {output_id}: stale/missing PID {pid}; restoring")
+                subprocess.Popen([script_path("start_output.sh"), cdir, output_id])
+                log_startup_event(f"Channel {name} output {output_id}: restore command launched")
+            except Exception as e:
+                log_startup_event(f"Channel {name} output {output_id}: restore failed: {e}")
+
+    log_startup_event("Engine startup restore scan complete")
+
+
 if __name__ == "__main__":
+    if os.environ.get("DISABLE_STARTUP_RESTORE", "false").lower() != "true":
+        restore_running_outputs_on_startup()
+    else:
+        log_startup_event("Startup restore disabled by environment")
+
     app.run(host="0.0.0.0", port=5000)
 
 

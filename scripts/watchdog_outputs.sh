@@ -151,7 +151,7 @@ for channel_dir in "$CHANNEL_ROOT"/*; do
   fi
 
   if [ -f "$ffmpeg_log" ]; then
-    speed="$(grep -o 'speed=[0-9.]*x' "$ffmpeg_log" | tail -1 | sed 's/speed=//;s/x//' || true)"
+    speed="$(grep -a -o 'speed=[0-9.]*x' "$ffmpeg_log" | tail -1 | sed 's/speed=//;s/x//' || true)"
     if [ -n "$speed" ]; then
       below_restart="$(awk -v s="$speed" -v t="$SPEED_RESTART" 'BEGIN{print (s<t)?1:0}')"
       below_warn="$(awk -v s="$speed" -v t="$SPEED_WARN" 'BEGIN{print (s<t)?1:0}')"
@@ -164,8 +164,8 @@ for channel_dir in "$CHANNEL_ROOT"/*; do
       fi
     fi
 
-    if grep -iE "Input/output error|Will reconnect|Error during demuxing|Invalid data" "$ffmpeg_log" | tail -5 >/dev/null 2>&1; then
-      recent="$(grep -iE "Input/output error|Will reconnect|Error during demuxing|Invalid data" "$ffmpeg_log" | tail -1 || true)"
+    if grep -a -iE "Input/output error|Will reconnect|Error during demuxing|Invalid data" "$ffmpeg_log" | tail -5 >/dev/null 2>&1; then
+      recent="$(grep -a -iE "Input/output error|Will reconnect|Error during demuxing|Invalid data" "$ffmpeg_log" | tail -1 || true)"
       warning_hash="$(printf "%s" "$recent" | sha1sum | awk '{print $1}')"
       warning_state="$channel_dir/runtime/status/last-ffmpeg-warning.hash"
       last_hash=""
