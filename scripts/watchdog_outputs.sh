@@ -84,6 +84,9 @@ for channel_dir in "$CHANNEL_ROOT"/*; do
   stream_file="$HLS_ROOT/Ch_${channel_id}/stream.m3u8"
   status_file="$channel_dir/runtime/status/hls-main.json"
   ffmpeg_log="$channel_dir/runtime/logs/hls-main.log"
+  channel_config="$channel_dir/channel.json"
+  settings_file="${STREAMING_ENGINE_CONFIG:-$CHANNEL_ROOT/system/settings.json}"
+  fallback_file="$channel_dir/runtime/status/audio-fallback.json"
 
   [ -f "$status_file" ] || continue
   status="$(jq -r '.status // "unknown"' "$status_file" 2>/dev/null || echo unknown)"
